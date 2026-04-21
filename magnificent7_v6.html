@@ -1232,6 +1232,13 @@ function renderAll(weekDates) {
   `;
 
   renderTodaySignal();
+  if (sigMode === 'open') {
+    const allDatesSet3 = new Set();
+    SYMBOLS.forEach(({ ticker }) => { const d = stockData[ticker]; if (d) d.dates.forEach((dt,i)=>{ if(d.changes[i]!=null) allDatesSet3.add(dt); }); });
+    renderOpenStatsBar([...allDatesSet3].sort());
+  } else {
+    renderSignalStatsBar();
+  }
   renderCards(weekDates);
   renderLineChart(weekDates);
   renderHeatmap(weekDates);
