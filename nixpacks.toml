@@ -2,7 +2,11 @@
 nixPkgs = ["python311", "python311Packages.pip"]
 
 [phases.install]
-cmds = ["python3.11 -m pip install -r requirements.txt"]
+cmds = [
+  "python3.11 -m pip install --upgrade pip",
+  "python3.11 -m pip install fastapi==0.136.0 uvicorn==0.44.0 httpx==0.28.1 numpy==2.4.4 scikit-learn==1.8.0",
+  "python3.11 -m pip install torch==2.6.0 --index-url https://download.pytorch.org/whl/cpu"
+]
 
 [start]
 cmd = "uvicorn server:app --host 0.0.0.0 --port $PORT"
