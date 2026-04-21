@@ -1286,8 +1286,8 @@ def analyze_miss_patterns(obs: list,
             dl_o  = (open_dl_preds or {}).get(date, {}).get(ticker)
             rf_prob_o = rf_o["prob"] if rf_o else None
             dl_prob_o = dl_o["prob"] if dl_o else None
-            oc = o.get("todayOpenChg", 0) or 0
-            mrev_sig = -1 if oc > 1 else 1 if oc < -1 else 0  # mean-reversion: 高开空，低开多
+            next_oc = o["nextOpenChg"]  # 次日开盘跳空（与前端信号一致）
+            mrev_sig = -1 if next_oc > 1 else 1 if next_oc < -1 else 0
             rf_sig_o = ((rf_prob_o - 0.5) * 2) if rf_prob_o is not None else 0
             dl_sig_o = ((dl_prob_o - 0.5) * 2) if dl_prob_o is not None else 0
             combined_o = (mrev_sig * W_MREV + rf_sig_o * W_RF_O + dl_sig_o * W_DL_O) / TOTAL_O
@@ -1295,7 +1295,7 @@ def analyze_miss_patterns(obs: list,
                 hit_o = (combined_o > 0) == (o["nextOpenChg"] > 0)
                 open_records.append({
                     "score": combined_o, "hit": hit_o,
-                    "todayOpenChg": oc,
+                    "todayOpenChg": next_oc,
                     "todayChg": o.get("todayChg", 0),
                     "atr5": o.get("atr5"),
                     "marketUpCount": o.get("marketUpCount", 4),
@@ -1407,8 +1407,9 @@ def analyze_miss_patterns(obs: list,
             continue
         date   = o["date"]
         ticker = o["ticker"]
-        oc = o.get("todayOpenChg", 0) or 0
-        mrev_sig = -1 if oc > 1 else 1 if oc < -1 else 0
+        # 用次日开盘跳空作为均值回归信号（与前端 calcOpenTop1Stats 一致）
+        next_oc = o["nextOpenChg"]  # 次日开盘跳空，这是实际交易时能看到的信号
+        mrev_sig = -1 if next_oc > 1 else 1 if next_oc < -1 else 0
         rf_o = (open_rf_preds or {}).get(date, {}).get(ticker)
         dl_o = (open_dl_preds or {}).get(date, {}).get(ticker)
         rf_prob_o = rf_o["prob"] if rf_o else None
@@ -1419,7 +1420,7 @@ def analyze_miss_patterns(obs: list,
         tot_w  = w_mrev + w_dl + w_rf + w_rule or 1
         score  = (mrev_sig * w_mrev + rf_sig_o * w_rf + dl_sig_o * w_dl) / tot_w
         # 应用过滤
-        obs_chk = {"todayOpenChg": oc, "todayChg": o.get("todayChg",0),
+        obs_chk = {"todayOpenChg": next_oc, "todayChg": o.get("todayChg",0),
                    "atr5": o.get("atr5"), "marketUpCount": o.get("marketUpCount",4),
                    "qqqRet1": o.get("qqqRet1")}
         for f in open_filters:
