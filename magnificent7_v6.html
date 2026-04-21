@@ -781,8 +781,8 @@ let _cachedOpenRuleHits = null;
 let _cachedRfOpenModel  = null;
 let _cachedDlOpenModel  = null;
 let _cachedMissPatterns      = null;
-let _cachedCloseTop1Records  = [];
-let _cachedOpenTop1Records   = [];
+let _cachedCloseTop1Records  = JSON.parse(localStorage.getItem('closeTop1Records') || '[]');
+let _cachedOpenTop1Records   = JSON.parse(localStorage.getItem('openTop1Records')  || '[]');
 // ticker → condKey → [{date, nextChg}]  预计算每条规则的历史命中列表
 let _cachedRuleHits = null;
 let _cachedAllConds = null;   // 全部条件（base + combo），只算一次
@@ -984,6 +984,8 @@ async function pollHeavy() {
       _cachedMissPatterns      = data.missPatterns       || null;
       _cachedCloseTop1Records  = data.closeTop1Records   || [];
       _cachedOpenTop1Records   = data.openTop1Records    || [];
+      if (_cachedCloseTop1Records.length) localStorage.setItem('closeTop1Records', JSON.stringify(_cachedCloseTop1Records));
+      if (_cachedOpenTop1Records.length)  localStorage.setItem('openTop1Records',  JSON.stringify(_cachedOpenTop1Records));
       _pkDayIdx = null;
       if (_cachedModelPK?.days) {
         _pkDayIdx = new Map();
