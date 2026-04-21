@@ -1,0 +1,3229 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+  <title>美股七姐妹 V4 · 近一周涨跌幅</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0d1117;
+      --card: #161b22;
+      --border: #30363d;
+      --text: #e6edf3;
+      --muted: #8b949e;
+      --green: #3fb950;
+      --red: #f85149;
+      --accent: #58a6ff;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      min-height: 100vh;
+      padding-bottom: 40px;
+    }
+
+    header {
+      background: linear-gradient(135deg, #1a1f2e 0%, #0d1117 100%);
+      border-bottom: 1px solid var(--border);
+      padding: 14px 16px;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    header .title h1 { font-size: 17px; font-weight: 700; }
+    header .title p  { font-size: 11px; color: var(--muted); margin-top: 2px; }
+
+    .refresh-btn {
+      background: var(--card);
+      border: 1px solid var(--border);
+      color: var(--accent);
+      padding: 6px 14px;
+      border-radius: 8px;
+      font-size: 12px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      transition: background 0.2s;
+      white-space: nowrap;
+    }
+
+    .refresh-btn:active { background: #21262d; }
+    .refresh-btn.loading .spin { animation: spin 0.8s linear infinite; display: inline-block; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* Summary */
+    .summary-row {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+      padding: 12px 12px 0;
+    }
+
+    .summary-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 10px 8px;
+      text-align: center;
+    }
+
+    .summary-card .val { font-size: 22px; font-weight: 700; }
+    .summary-card .lbl { font-size: 11px; color: var(--muted); margin-top: 2px; }
+
+    .up  { color: var(--green); }
+    .dn  { color: var(--red); }
+    .neu { color: var(--accent); }
+
+    /* Stock grid */
+    .stocks-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      padding: 12px;
+    }
+
+    @media (min-width: 520px)  { .stocks-grid { grid-template-columns: repeat(3, 1fr); } }
+    @media (min-width: 800px)  { .stocks-grid { grid-template-columns: repeat(4, 1fr); } }
+
+    .stock-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 12px;
+      cursor: pointer;
+      transition: border-color 0.15s, transform 0.1s;
+      overflow: hidden;
+    }
+
+    .stock-card:active { transform: scale(0.96); }
+    .stock-card.selected { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+    .stock-card.up-card  { border-left: 3px solid var(--green); }
+    .stock-card.dn-card  { border-left: 3px solid var(--red); }
+
+    .stock-card .ticker { font-size: 14px; font-weight: 700; }
+    .stock-card .sname  { font-size: 10px; color: var(--muted); margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .stock-card .price  { font-size: 15px; font-weight: 600; margin-top: 8px; }
+    .stock-card .change { font-size: 12px; font-weight: 600; margin-top: 3px; }
+    .mini-chart { margin-top: 8px; height: 38px; }
+
+    /* Big chart */
+    .chart-section {
+      margin: 4px 12px 0;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 14px;
+    }
+
+    .chart-section h2 {
+      font-size: 13px;
+      color: var(--text);
+      margin-bottom: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .chart-section h2 em { font-style: normal; color: var(--accent); font-size: 12px; }
+    .chart-wrap { height: 220px; }
+
+    /* Heatmap */
+    .heatmap-section {
+      margin: 10px 12px 0;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 14px;
+      overflow-x: auto;
+    }
+
+    .heatmap-section h2 { font-size: 13px; margin-bottom: 10px; }
+
+    .hm-table {
+      width: 100%;
+      border-collapse: separate;
+      border-spacing: 4px;
+      min-width: 360px;
+    }
+
+    .hm-table th {
+      font-size: 10px;
+      color: var(--muted);
+      font-weight: 500;
+      text-align: center;
+      padding: 3px;
+    }
+
+    .hm-table td.ticker-label {
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--text);
+      padding: 4px 6px;
+      white-space: nowrap;
+    }
+
+    .hm-cell {
+      border-radius: 6px;
+      padding: 5px 3px;
+      text-align: center;
+      font-size: 10px;
+      font-weight: 700;
+      min-width: 42px;
+    }
+
+    /* Error / loading */
+    .error-bar {
+      background: rgba(248,81,73,0.12);
+      border: 1px solid rgba(248,81,73,0.35);
+      color: #f85149;
+      border-radius: 8px;
+      padding: 10px 14px;
+      margin: 10px 12px 0;
+      font-size: 12px;
+    }
+
+    .loading-overlay {
+      text-align: center;
+      padding: 50px 16px;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .dot-flash { display: inline-flex; gap: 4px; margin-left: 4px; }
+    .dot-flash span {
+      width: 5px; height: 5px; border-radius: 50%; background: var(--muted);
+      animation: df 1.2s infinite;
+    }
+    .dot-flash span:nth-child(2) { animation-delay: .2s; }
+    .dot-flash span:nth-child(3) { animation-delay: .4s; }
+    @keyframes df { 0%,80%,100%{opacity:.2} 40%{opacity:1} }
+
+    .skeleton {
+      background: linear-gradient(90deg,#21262d 25%,#2d333b 50%,#21262d 75%);
+      background-size: 200% 100%;
+      animation: shimmer 1.4s infinite;
+      border-radius: 5px;
+    }
+    @keyframes shimmer { 0%{background-position:-200% 0} 100%{background-position:200% 0} }
+
+    .last-update { text-align: center; font-size: 11px; color: var(--muted); padding: 14px 0 0; }
+
+    .data-src { text-align: center; font-size: 10px; color: #484f58; padding: 4px 0 16px; }
+
+    /* ── Model PK section ── */
+    .pk-section {
+      margin: 10px 12px 0;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 14px;
+    }
+    .pk-section h2 { font-size: 13px; margin-bottom: 4px; }
+    .pk-section .subtitle { font-size: 11px; color: var(--muted); margin-bottom: 14px; line-height: 1.6; }
+
+    .pk-scoreboard {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+
+    .pk-card {
+      border-radius: 10px;
+      border: 2px solid var(--border);
+      padding: 14px;
+      text-align: center;
+      position: relative;
+    }
+    .pk-card.winner { border-color: #e3b341; box-shadow: 0 0 0 1px #e3b341; }
+    .pk-card .pk-name { font-size: 12px; color: var(--muted); margin-bottom: 6px; font-weight: 600; letter-spacing: 1px; text-transform: uppercase; }
+    .pk-card .pk-rate { font-size: 32px; font-weight: 900; }
+    .pk-card .pk-detail { font-size: 11px; color: var(--muted); margin-top: 4px; }
+    .pk-card .pk-crown { position: absolute; top: -10px; left: 50%; transform: translateX(-50%); font-size: 18px; }
+
+    .pk-history {
+      overflow-x: auto;
+    }
+    .pk-history-title { font-size: 11px; color: var(--muted); margin-bottom: 8px; }
+    .pk-history-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 11px;
+      min-width: 500px;
+    }
+    .pk-history-table th {
+      color: var(--muted); font-weight: 500;
+      padding: 4px 8px; text-align: left;
+      border-bottom: 1px solid var(--border);
+    }
+    .pk-history-table td {
+      padding: 5px 8px;
+      border-bottom: 1px solid #21262d;
+      vertical-align: middle;
+    }
+    .pk-history-table tr:last-child td { border-bottom: none; }
+    .pk-badge {
+      display: inline-block; padding: 2px 7px; border-radius: 5px;
+      font-weight: 700; font-size: 10px;
+    }
+    .pk-badge.hit-rule  { background: rgba(63,185,80,0.15);  color: #3fb950; border: 1px solid #3fb95055; }
+    .pk-badge.miss-rule { background: rgba(248,81,73,0.15);  color: #f85149; border: 1px solid #f8514955; }
+    .pk-badge.hit-lr    { background: rgba(88,166,255,0.15); color: #58a6ff; border: 1px solid #58a6ff55; }
+    .pk-badge.miss-lr   { background: rgba(248,81,73,0.15);  color: #f85149; border: 1px solid #f8514955; }
+    .pk-badge.neut      { background: transparent; color: var(--muted); border: 1px solid var(--border); }
+
+    /* ── Rank winrate section ── */
+    .rank-section {
+      margin: 10px 12px 0;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 14px;
+    }
+
+    .rank-section h2 { font-size: 13px; margin-bottom: 4px; }
+    .rank-section .subtitle { font-size: 11px; color: var(--muted); margin-bottom: 14px; line-height: 1.6; }
+
+    .rank-cards {
+      display: grid;
+      grid-template-columns: repeat(8, 1fr);
+      gap: 6px;
+      margin-bottom: 16px;
+    }
+
+    @media (max-width: 480px) { .rank-cards { grid-template-columns: repeat(4, 1fr); } }
+
+    .rank-card {
+      background: #0d1117;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 10px 6px;
+      text-align: center;
+    }
+
+    .rank-card .rk-num { font-size: 11px; color: var(--muted); margin-bottom: 4px; }
+    .rank-card .rk-pct { font-size: 18px; font-weight: 800; }
+    .rank-card .rk-frac { font-size: 10px; color: var(--muted); margin-top: 2px; }
+    .rank-card .rk-avg  { font-size: 10px; margin-top: 3px; }
+    .rank-card.best { border-color: var(--green); box-shadow: 0 0 0 1px var(--green); }
+    .rank-card.worst { border-color: var(--red); }
+
+    .rank-detail-title { font-size: 11px; color: var(--muted); margin-bottom: 8px; }
+
+    .rank-detail-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 11px;
+    }
+
+    .rank-detail-table th {
+      color: var(--muted);
+      font-weight: 500;
+      padding: 4px 6px;
+      text-align: left;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .rank-detail-table td {
+      padding: 5px 6px;
+      border-bottom: 1px solid #21262d;
+      vertical-align: middle;
+    }
+
+    .rank-detail-table tr:last-child td { border-bottom: none; }
+
+    .rank-badge {
+      display: inline-block;
+      width: 20px; height: 20px;
+      border-radius: 50%;
+      background: #21262d;
+      text-align: center;
+      line-height: 20px;
+      font-size: 10px;
+      font-weight: 700;
+    }
+
+    /* ── Today signal ── */
+    .signal-section {
+      margin: 10px 12px 0;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 16px;
+    }
+
+    .signal-section h2 { font-size: 13px; margin-bottom: 10px; color: var(--muted); font-weight: 500; }
+
+    /* Date picker row */
+    .sig-date-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-bottom: 14px;
+    }
+
+    .sig-date-row label { font-size: 11px; color: var(--muted); }
+
+    .sig-date-scroll {
+      display: flex;
+      gap: 5px;
+      overflow-x: auto;
+      flex: 1;
+      padding-bottom: 4px;
+      scrollbar-width: thin;
+      scrollbar-color: #30363d transparent;
+    }
+
+    .sig-date-btn {
+      flex-shrink: 0;
+      padding: 4px 10px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: transparent;
+      color: var(--muted);
+      font-size: 11px;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: all 0.12s;
+    }
+
+    .sig-date-btn:hover { border-color: var(--accent); color: var(--accent); }
+    .sig-date-btn.active { background: var(--accent); border-color: var(--accent); color: #0d1117; font-weight: 700; }
+    .sig-date-btn.latest { border-color: #e3b341; color: #e3b341; }
+    .sig-date-btn.latest.active { background: #e3b341; color: #0d1117; }
+
+    /* Actual result banner */
+    .actual-result {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+      margin-bottom: 12px;
+      padding: 10px 12px;
+      border-radius: 9px;
+      background: #0d1117;
+      border: 1px solid var(--border);
+      font-size: 11px;
+      align-items: center;
+    }
+
+    .actual-result .ar-label { color: var(--muted); margin-right: 4px; }
+    .actual-result .ar-item  { display: flex; align-items: center; gap: 4px; }
+    .actual-result .ar-badge {
+      display: inline-flex; align-items: center; gap: 3px;
+      padding: 2px 7px; border-radius: 10px; font-weight: 700; font-size: 11px;
+    }
+    .ar-badge.hit  { background: rgba(63,185,80,0.15); color: #3fb950; border: 1px solid #3fb950; }
+    .ar-badge.miss { background: rgba(248,81,73,0.15);  color: #f85149; border: 1px solid #f85149; }
+
+    /* Overall verdict */
+    .verdict-row {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 14px;
+      align-items: stretch;
+    }
+
+    .verdict-main {
+      flex: 1;
+      border-radius: 12px;
+      padding: 16px;
+      text-align: center;
+      border: 2px solid transparent;
+    }
+
+    .verdict-main.long  { background: rgba(63,185,80,0.1);  border-color: #3fb950; }
+    .verdict-main.short { background: rgba(248,81,73,0.1);  border-color: #f85149; }
+    .verdict-main.neut  { background: rgba(139,148,158,0.08); border-color: #30363d; }
+
+    .verdict-label {
+      font-size: 11px;
+      color: var(--muted);
+      margin-bottom: 4px;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+    }
+
+    .verdict-word {
+      font-size: 36px;
+      font-weight: 900;
+      letter-spacing: 2px;
+      line-height: 1.1;
+    }
+
+    .verdict-main.long  .verdict-word { color: #3fb950; }
+    .verdict-main.short .verdict-word { color: #f85149; }
+    .verdict-main.neut  .verdict-word { color: #8b949e; }
+
+    .verdict-conf {
+      font-size: 12px;
+      margin-top: 6px;
+      color: var(--muted);
+    }
+
+    .verdict-conf strong { color: var(--text); }
+
+    /* Per-stock mini signals */
+    .verdict-stocks {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+      min-width: 140px;
+    }
+
+    .vs-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: #0d1117;
+      border-radius: 7px;
+      padding: 5px 9px;
+      gap: 8px;
+      font-size: 11px;
+    }
+
+    .vs-ticker { font-weight: 700; width: 36px; }
+    .vs-chg    { width: 48px; text-align: right; font-size: 10px; }
+    .vs-dir    { font-weight: 700; font-size: 11px; width: 28px; text-align: right; }
+
+    /* Hit rules list */
+    .sig-rules-title {
+      font-size: 11px;
+      color: var(--muted);
+      margin: 4px 0 8px;
+    }
+
+    .sig-rule-item {
+      display: grid;
+      grid-template-columns: 36px 1fr auto auto auto;
+      align-items: center;
+      padding: 7px 10px;
+      border-radius: 7px;
+      background: #0d1117;
+      border: 1px solid var(--border);
+      margin-bottom: 5px;
+      font-size: 11px;
+      gap: 8px;
+    }
+
+    .sig-rule-item .sri-desc { color: var(--text); }
+    .sig-rule-item .sri-ticker { font-weight: 700; }
+    .sig-rule-item .sri-wr { font-weight: 700; white-space: nowrap; }
+    .sig-rule-item .sri-dir { white-space: nowrap; font-size: 10px; }
+
+    /* ── Rule miner ── */
+    .miner-section {
+      margin: 10px 12px 0;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 14px;
+    }
+
+    .miner-section h2 { font-size: 13px; margin-bottom: 4px; }
+    .miner-section .subtitle { font-size: 11px; color: var(--muted); margin-bottom: 12px; line-height: 1.6; }
+
+    .miner-controls {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      align-items: center;
+      margin-bottom: 14px;
+    }
+
+    .miner-controls label { font-size: 11px; color: var(--muted); }
+
+    .miner-controls select {
+      background: #0d1117;
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: 6px;
+      padding: 4px 8px;
+      font-size: 11px;
+    }
+
+    .rule-list { display: flex; flex-direction: column; gap: 6px; }
+
+    .rule-row {
+      display: grid;
+      grid-template-columns: 1fr auto auto auto;
+      gap: 8px;
+      align-items: center;
+      background: #0d1117;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 9px 12px;
+      font-size: 12px;
+    }
+
+    .rule-row.top1 { border-color: #3fb950; background: rgba(63,185,80,0.05); }
+    .rule-row.top2 { border-color: rgba(63,185,80,0.5); }
+
+    .rule-desc { color: var(--text); line-height: 1.5; }
+    .rule-desc strong { color: var(--accent); }
+
+    .rule-wr {
+      font-size: 16px;
+      font-weight: 800;
+      white-space: nowrap;
+    }
+
+    .rule-avg { font-size: 11px; white-space: nowrap; text-align: right; }
+    .rule-n   { font-size: 10px; color: var(--muted); white-space: nowrap; }
+
+    .no-rules { color: var(--muted); font-size: 12px; padding: 12px 0; text-align: center; }
+
+    /* ── Miss analysis ── */
+    .miss-section {
+      margin-top: 14px;
+      border-top: 1px solid var(--border);
+      padding-top: 12px;
+    }
+
+    .miss-title {
+      font-size: 11px;
+      color: var(--muted);
+      margin-bottom: 8px;
+    }
+
+    .miss-card {
+      background: #0d1117;
+      border: 1px solid rgba(248,81,73,0.3);
+      border-radius: 9px;
+      padding: 10px 12px;
+      margin-bottom: 7px;
+      font-size: 11px;
+    }
+
+    .miss-card-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 7px;
+    }
+
+    .miss-card-header .mc-ticker { font-weight: 700; font-size: 13px; }
+    .miss-card-header .mc-pred   { padding: 2px 8px; border-radius: 5px; font-weight: 700; font-size: 11px; }
+    .miss-card-header .mc-actual { font-size: 11px; font-weight: 600; }
+    .miss-card-header .mc-badge  {
+      margin-left: auto; font-size: 10px; font-weight: 700;
+      padding: 2px 7px; border-radius: 5px;
+      background: rgba(248,81,73,0.15); color: #f85149; border: 1px solid rgba(248,81,73,0.4);
+    }
+
+    .miss-reason {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .miss-reason-row {
+      display: flex;
+      align-items: flex-start;
+      gap: 6px;
+      padding: 5px 8px;
+      border-radius: 6px;
+      background: #161b22;
+      line-height: 1.5;
+    }
+
+    .miss-reason-row .mr-icon { font-size: 12px; flex-shrink: 0; margin-top: 1px; }
+    .miss-reason-row .mr-text { color: var(--text); flex: 1; }
+    .miss-reason-row .mr-text em { font-style: normal; color: #e3b341; font-weight: 600; }
+    .miss-reason-row .mr-text s  { color: var(--muted); }
+
+    /* ── Filter bar ── */
+    .filter-bar {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 10px 12px 0;
+      flex-wrap: wrap;
+    }
+
+    .filter-bar span { font-size: 12px; color: var(--muted); }
+
+    .filter-btn {
+      padding: 5px 14px;
+      border-radius: 20px;
+      border: 1px solid var(--border);
+      background: transparent;
+      color: var(--muted);
+      font-size: 12px;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+
+    .filter-btn.active {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #0d1117;
+      font-weight: 700;
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="title">
+    <h1>🚀 美股七姐妹</h1>
+    <p id="date-range">近一周每日涨跌幅</p>
+  </div>
+  <button class="refresh-btn" id="refresh-btn" onclick="loadAll()">
+    <span class="spin">↻</span> 刷新
+  </button>
+</header>
+
+<div id="error-zone"></div>
+
+<div class="filter-bar" id="filter-bar">
+  <span>时间范围：</span>
+  <button class="filter-btn" data-days="5"   onclick="setFilter(5)">近1周</button>
+  <button class="filter-btn" data-days="10"  onclick="setFilter(10)">近2周</button>
+  <button class="filter-btn" data-days="21"  onclick="setFilter(21)">近1个月</button>
+  <button class="filter-btn" data-days="63"  onclick="setFilter(63)">近3个月</button>
+  <button class="filter-btn active" data-days="0" onclick="setFilter(0)">近1年</button>
+</div>
+
+<div id="main-content">
+  <div class="loading-overlay">
+    加载中<span class="dot-flash"><span></span><span></span><span></span></span>
+  </div>
+</div>
+
+<script>
+const SYMBOLS = [
+  { ticker: 'AAPL',  name: 'Apple',     color: '#58a6ff' },
+  { ticker: 'MSFT',  name: 'Microsoft', color: '#79c0ff' },
+  { ticker: 'NVDA',  name: 'NVIDIA',    color: '#56d364' },
+  { ticker: 'GOOGL', name: 'Alphabet',  color: '#e3b341' },
+  { ticker: 'AMZN',  name: 'Amazon',    color: '#f0883e' },
+  { ticker: 'META',  name: 'Meta',      color: '#d2a8ff' },
+  { ticker: 'TSLA',  name: 'Tesla',     color: '#ff7b72' },
+  { ticker: 'QQQ',   name: '纳斯达克100', color: '#ffa657' },
+];
+
+const FINNHUB_KEY = 'd7ia59hr01qu8vfnt2f0d7ia59hr01qu8vfnt2fg';
+let stockData = {};
+let futuresData = {};
+let futuresHistory = {}; // NQ=F ES=F 历史日线数据
+let selectedTicker = 'AAPL';
+// 缓存：只依赖历史数据，loadAll后计算一次
+let _cachedObs = null;
+let _cachedComboConds = null;
+let _cachedFutureBeta = {};     // ticker → beta
+let _cachedFutureOpenBeta = {}; // ticker → beta
+let _cachedModelPK = null;
+// ticker → condKey → [{date, nextChg}]  预计算每条规则的历史命中列表
+let _cachedRuleHits = null;
+let lineChart = null;
+let filterDays = 0; // 0 = all available (1y)
+
+function setFilter(days) {
+  filterDays = days;
+  document.querySelectorAll('.filter-btn').forEach(b => {
+    b.classList.toggle('active', +b.dataset.days === days);
+  });
+  // Re-render with filtered dates, no re-fetch needed
+  const dates = getFilteredDates();
+  updateDateRange(dates);
+  renderAll(dates);
+}
+
+function getFilteredDates() {
+  const sample = Object.values(stockData).find(v => v);
+  if (!sample) return [];
+  const allDates = sample.dates.filter((_, i) => sample.changes[i] !== null);
+  return filterDays > 0 ? allDates.slice(-filterDays) : allDates;
+}
+
+function updateDateRange(dates) {
+  if (!dates.length) return;
+  document.getElementById('date-range').textContent =
+    `${fmtDateShort(dates[0])} ~ ${fmtDateShort(dates[dates.length - 1])}`;
+}
+
+// ── Date helpers ────────────────────────────────────────────────
+function toYMD(d) {
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+
+function fmtDate(ymd) {
+  const [,m,d] = ymd.split('-');
+  return `${+m}/${+d}`;
+}
+
+function fmtDateShort(ymd) {
+  const days = ['日','一','二','三','四','五','六'];
+  const dt = new Date(ymd + 'T12:00:00');
+  return `${+ymd.slice(5,7)}/${+ymd.slice(8,10)} 周${days[dt.getDay()]}`;
+}
+
+// ── Finnhub 实时报价（无延迟）────────────────────────────────────
+async function finnhubQuote(symbol) {
+  const sym = symbol === 'NQ=F' ? 'CME:NQ1!' : symbol === 'ES=F' ? 'CME:ES1!' : symbol;
+  const url = `https://finnhub.io/api/v1/quote?symbol=${encodeURIComponent(sym)}&token=${FINNHUB_KEY}`;
+  const r = await fetch(url);
+  if (!r.ok) throw new Error(r.status);
+  const d = await r.json();
+  if (!d.c) throw new Error('no data');
+  return {
+    realtimePrice: d.c,
+    intradayChg:   d.pc ? +((d.c - d.pc) / d.pc * 100).toFixed(2) : null,
+    intradayOtc:   d.o  ? +((d.c - d.o)  / d.o  * 100).toFixed(2) : null,
+    prevClose: d.pc,
+    todayOpen: d.o,
+  };
+}
+
+// ── Fetch futures realtime quote (5m, 5d) ────────────────────────
+async function fetchFuturesQuote(ticker) {
+  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1m&range=1d&_=${Date.now()}`;
+  const attempts = [
+    () => fetch(`https://corsproxy.io/?${encodeURIComponent(url)}`).then(r => r.ok ? r.json() : Promise.reject()),
+    () => fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(url)}`).then(async r => {
+            if (!r.ok) throw 0;
+            return JSON.parse((await r.json()).contents);
+          }),
+  ];
+  let json = null;
+  for (const a of attempts) { try { json = await a(); break; } catch(e) {} }
+  if (!json) return fetchYahoo(ticker); // fallback到日线
+
+  const result = json?.chart?.result?.[0];
+  if (!result) return fetchYahoo(ticker);
+
+  const meta          = result.meta;
+  const timestamps    = result.timestamp;
+  const closes        = result.indicators.quote[0].close;
+  const realtimePrice = meta.regularMarketPrice;
+
+  const prevClose = meta.previousClose ?? meta.chartPreviousClose ?? closes.filter(Boolean).slice(-2)[0];
+
+  const intradayChg = prevClose && realtimePrice
+    ? +((realtimePrice - prevClose) / prevClose * 100).toFixed(2)
+    : null;
+
+  return { realtimePrice, intradayChg, intradayOtc: null, lastClose: prevClose, ticker };
+}
+
+// ── Fetch Yahoo Finance — multi-proxy fallback chain ────────────
+// file:// origin is "null" which blocks most CORS proxies.
+// Strategy: try several proxies in order until one works.
+async function fetchYahoo(ticker) {
+  const yahooUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${ticker}?interval=1d&range=1y&_=${Date.now()}`;
+
+  const attempts = [
+    // 1. corsproxy.io
+    () => fetch(`https://corsproxy.io/?${encodeURIComponent(yahooUrl)}`),
+    // 2. allorigins (wrapped JSON)
+    () => fetch(`https://api.allorigins.win/get?url=${encodeURIComponent(yahooUrl)}`)
+          .then(async r => {
+            if (!r.ok) throw new Error(r.status);
+            const w = await r.json();
+            return { ok: true, _allorigins: true, _contents: w.contents };
+          }),
+    // 3. thingproxy
+    () => fetch(`https://thingproxy.freeboard.io/fetch/${yahooUrl}`),
+    // 4. cors-anywhere
+    () => fetch(`https://cors-anywhere.herokuapp.com/${yahooUrl}`, {
+            headers: { 'X-Requested-With': 'XMLHttpRequest' } }),
+    // 5. Direct last (CORS error expected on localhost, but works on some setups)
+    () => fetch(yahooUrl),
+  ];
+
+  let lastErr;
+  for (const attempt of attempts) {
+    try {
+      const res = await attempt();
+      if (res._allorigins) {
+        return parseYahooChart(JSON.parse(res._contents), ticker);
+      }
+      if (!res.ok) continue;
+      const json = await res.json();
+      return parseYahooChart(json, ticker);
+    } catch (e) {
+      lastErr = e;
+    }
+  }
+  throw lastErr || new Error('all proxies failed');
+}
+
+function parseYahooChart(json, ticker) {
+  const result = json?.chart?.result?.[0];
+  if (!result) throw new Error('no data');
+
+  const timestamps = result.timestamp;
+  const rawOpens  = result.indicators.quote[0].open;
+  const closes    = result.indicators.quote[0].close;
+  const adjCloses = result.indicators.adjclose?.[0]?.adjclose || closes;
+  const meta = result.meta;
+
+  const dates = timestamps.map(ts => {
+    const nyDate = new Date(ts * 1000 + (meta.gmtoffset || -14400) * 1000);
+    return toYMD(nyDate);
+  });
+
+  // daily % change vs prev close (adj)
+  const changes = adjCloses.map((c, i) => {
+    if (i === 0) return null;
+    const prev = adjCloses[i - 1];
+    if (!prev || !c) return null;
+    return +((c - prev) / prev * 100).toFixed(2);
+  });
+
+  // intraday open-to-close % (open vs close, using raw prices)
+  const openToClose = closes.map((c, i) => {
+    const o = rawOpens[i];
+    if (!o || !c) return null;
+    return +((c - o) / o * 100).toFixed(2);
+  });
+
+  // 开盘涨跌幅：当日开盘 vs 昨日收盘
+  const openChanges = rawOpens.map((o, i) => {
+    if (i === 0 || !o) return null;
+    const prev = closes[i - 1];
+    if (!prev) return null;
+    return +((o - prev) / prev * 100).toFixed(2);
+  });
+
+  const lastClose  = closes[closes.length - 1] ?? meta.regularMarketPrice;
+  const lastChange = changes[changes.length - 1];
+
+  // 实时价格（15分钟延迟）
+  const realtimePrice = meta.regularMarketPrice ?? lastClose;
+  // 昨收：用倒数第二根K线（最后一根K线收盘=今日实时价，倒数第二才是真正昨收）
+  const prevClose = closes[closes.length - 2] ?? closes[closes.length - 1];
+  // 涨跌幅：实时价 vs 昨收
+  const intradayChg = prevClose && realtimePrice
+    ? +((realtimePrice - prevClose) / prevClose * 100).toFixed(2)
+    : null;
+  // 今日开盘
+  const todayOpen = meta.regularMarketOpen ?? rawOpens[rawOpens.length - 1];
+  const intradayOtc = todayOpen && todayOpen > 0 && prevClose && Math.abs(todayOpen - prevClose) / prevClose > 0.0001
+    ? +((realtimePrice - todayOpen) / todayOpen * 100).toFixed(2)
+    : null;
+
+  return { dates, closes: adjCloses, changes, openToClose, openChanges, lastClose, lastChange,
+           realtimePrice, intradayChg, intradayOtc, ticker };
+}
+
+// ── Load all ────────────────────────────────────────────────────
+async function loadAll() {
+  if (realtimeTimer) { clearInterval(realtimeTimer); realtimeTimer = null; }
+  clearError();
+  setLoading(true);
+  document.getElementById('main-content').innerHTML =
+    `<div class="loading-overlay">加载中<span class="dot-flash"><span></span><span></span><span></span></span></div>`;
+
+  const FUTURES = ['NQ=F', 'ES=F'];
+  const [results, futResults, futHistResults] = await Promise.all([
+    Promise.allSettled(SYMBOLS.map(s => fetchYahoo(s.ticker))),
+    Promise.allSettled(FUTURES.map(f => fetchFuturesQuote(f))),
+    Promise.allSettled(FUTURES.map(f => fetchYahoo(f))), // 历史日线
+  ]);
+
+  stockData = {};
+  let anyFail = false;
+  results.forEach((r, i) => {
+    const ticker = SYMBOLS[i].ticker;
+    if (r.status === 'fulfilled') {
+      stockData[ticker] = r.value;
+    } else {
+      stockData[ticker] = null;
+      anyFail = true;
+      console.warn(ticker, r.reason);
+    }
+  });
+
+  futuresData = {};
+  futResults.forEach((r, i) => {
+    const sym = FUTURES[i];
+    if (r.status === 'fulfilled') futuresData[sym] = r.value;
+  });
+
+  futuresHistory = {};
+  futHistResults.forEach((r, i) => {
+    if (r.status === 'fulfilled') futuresHistory[FUTURES[i]] = r.value;
+  });
+
+  // 清空所有依赖历史数据的缓存
+  _cachedObs = null;
+  _cachedComboConds = null;
+  _cachedFutureBeta = {};
+  _cachedFutureOpenBeta = {};
+  _cachedModelPK = null;
+  _cachedRuleHits = null;
+
+  // 用 Finnhub 覆盖实时价（无延迟）：个股 + 期货
+  const allSymbols = [...SYMBOLS.map(s => s.ticker), ...FUTURES];
+  const finnhubResults = await Promise.allSettled(allSymbols.map(s => finnhubQuote(s)));
+  finnhubResults.forEach((r, i) => {
+    if (r.status !== 'fulfilled') return;
+    const sym = allSymbols[i];
+    const q   = r.value;
+    if (i < SYMBOLS.length) {
+      // 个股：覆盖实时价和涨跌幅
+      if (stockData[sym]) {
+        stockData[sym].realtimePrice = q.realtimePrice;
+        stockData[sym].intradayChg   = q.intradayChg;
+        stockData[sym].intradayOtc   = q.intradayOtc;
+      }
+    } else {
+      // 期货：直接存
+      futuresData[sym] = q;
+    }
+  });
+
+  if (anyFail) showError('部分数据加载失败（Yahoo Finance 限速或代理超时），请稍后点击刷新重试。');
+
+  // 清空重计算缓存，Worker 会重新算
+  _cachedObs = null; _cachedComboConds = null; _cachedRuleHits = null;
+  _cachedFutureBeta = {}; _cachedFutureOpenBeta = {};
+  _cachedModelPK = null;
+
+  const dates = getFilteredDates();
+  updateDateRange(dates);
+  renderAll(dates);
+  setLoading(false);
+
+  // 把重计算卸给 Worker，完成后自动更新信号区域
+  startComputeWorker();
+}
+
+// ── Render ───────────────────────────────────────────────────────
+function renderAll(weekDates) {
+  const content = document.getElementById('main-content');
+  if (!weekDates.length) {
+    content.innerHTML = `<div class="loading-overlay">暂无数据，请点击刷新重试</div>`;
+    return;
+  }
+
+  let upCount = 0, dnCount = 0;
+  SYMBOLS.forEach(({ ticker }) => {
+    const d = stockData[ticker];
+    if (!d || d.lastChange == null) return;
+    if (d.lastChange > 0) upCount++;
+    else if (d.lastChange < 0) dnCount++;
+  });
+  const neuCount = SYMBOLS.length - upCount - dnCount;
+
+  content.innerHTML = `
+    <div class="signal-section">
+      <h2>基于历史规则 · 操作信号回溯</h2>
+      <div class="sig-date-row">
+        <label>选择日期：</label>
+        <div class="sig-date-scroll" id="sig-date-scroll"></div>
+      </div>
+      <div id="actual-result"></div>
+      <div class="verdict-row" id="verdict-row"></div>
+      <div class="sig-rules-title" id="sig-rules-title"></div>
+      <div id="sig-rules-list"></div>
+      <div id="miss-analysis"></div>
+    </div>
+    <div class="summary-row">
+      <div class="summary-card"><div class="val up">↑ ${upCount}</div><div class="lbl">今日上涨</div></div>
+      <div class="summary-card"><div class="val dn">↓ ${dnCount}</div><div class="lbl">今日下跌</div></div>
+      <div class="summary-card"><div class="val neu">— ${neuCount}</div><div class="lbl">持平</div></div>
+    </div>
+    <div class="stocks-grid" id="stocks-grid"></div>
+    <div class="chart-section">
+      <h2>涨跌幅走势对比 <em id="chart-lbl">${selectedTicker} 已选中</em></h2>
+      <div class="chart-wrap"><canvas id="line-chart"></canvas></div>
+    </div>
+    <div class="heatmap-section">
+      <h2>📊 每日涨跌热力图</h2>
+      <table class="hm-table" id="heatmap"></table>
+    </div>
+    <div class="miner-section">
+      <h2>🔍 最优信号挖掘</h2>
+      <p class="subtitle">穷举条件组合，从历史数据反推胜率最高的规则 · 最少需要3次触发才纳入统计</p>
+      <div class="miner-controls">
+        <label>方向：</label>
+        <select id="miner-dir" onchange="renderMiner()">
+          <option value="long">做多</option>
+          <option value="short">做空</option>
+        </select>
+        <label style="margin-left:8px">目标：</label>
+        <select id="miner-target" onchange="renderMiner()">
+          <option value="winrate">次日胜率最高</option>
+          <option value="avgret">次日平均收益最高</option>
+          <option value="combined">胜率×收益综合最优</option>
+        </select>
+        <label style="margin-left:8px">显示：</label>
+        <select id="miner-topn" onchange="renderMiner()">
+          <option value="5">Top 5</option>
+          <option value="10">Top 10</option>
+          <option value="20">Top 20</option>
+        </select>
+      </div>
+      <div class="rule-list" id="rule-list"></div>
+    </div>
+    <div class="pk-section">
+      <h2>⚔️ 模型 PK · 回测对比</h2>
+      <p class="subtitle">对每个历史交易日，两个模型各自预测次日方向，统计命中率 · 只统计有明确方向信号的预测（排除观望）</p>
+      <div class="pk-scoreboard" id="pk-scoreboard"></div>
+      <div class="pk-history">
+        <div class="pk-history-title">📋 逐日对比明细（最近30条）</div>
+        <table class="pk-history-table" id="pk-history-table"></table>
+      </div>
+    </div>
+    <div class="rank-section">
+      <h2>🏆 当日排名 → 次日胜率</h2>
+      <p class="subtitle">
+        每个交易日将七姐妹按涨跌幅排名（第1名=涨最多，第7名=跌最多）<br>
+        统计每个排名位置，次日上涨的概率 ↑ 及平均涨跌幅
+      </p>
+      <div class="rank-cards" id="rank-cards"></div>
+      <div class="rank-detail-title">📋 每日排名明细</div>
+      <div style="overflow-x:auto"><table class="rank-detail-table" id="rank-detail"></table></div>
+    </div>
+    <div class="last-update" id="last-update"></div>
+    <div class="data-src">数据来源：Yahoo Finance · 仅供参考，非投资建议</div>
+  `;
+
+  renderTodaySignal();
+  renderCards(weekDates);
+  renderLineChart(weekDates);
+  renderHeatmap(weekDates);
+  renderMiner();
+  renderModelPK();
+  renderRankWinrate();
+  document.getElementById('last-update').textContent = `更新时间：${new Date().toLocaleString('zh-CN')}`;
+
+  if (realtimeTimer) clearInterval(realtimeTimer);
+  realtimeTimer = setInterval(refreshRealtime, 30000);
+}
+
+// ── Stock cards ──────────────────────────────────────────────────
+function renderCards(weekDates) {
+  const grid = document.getElementById('stocks-grid');
+  if (!grid) return;
+  grid.innerHTML = '';
+
+  SYMBOLS.forEach(({ ticker, name }) => {
+    const d = stockData[ticker];
+    const card = document.createElement('div');
+    card.className = 'stock-card' + (ticker === selectedTicker ? ' selected' : '');
+
+    if (!d) {
+      card.innerHTML = `<div class="ticker">${ticker}</div><div class="sname">${name}</div>
+        <div class="skeleton" style="height:14px;margin-top:8px"></div>
+        <div class="skeleton" style="height:10px;margin-top:5px;width:55%"></div>`;
+      grid.appendChild(card);
+      return;
+    }
+
+    const isUp = (d.lastChange ?? 0) >= 0;
+    card.classList.add(isUp ? 'up-card' : 'dn-card');
+
+    const sparkId = `spark-${ticker}`;
+    const chgStr = d.lastChange != null
+      ? `${isUp ? '▲' : '▼'} ${Math.abs(d.lastChange).toFixed(2)}%`
+      : '—';
+
+    card.innerHTML = `
+      <div class="ticker">${ticker}</div>
+      <div class="sname">${name}</div>
+      <div class="price ${isUp ? 'up' : 'dn'}">$${(d.lastClose ?? 0).toFixed(2)}</div>
+      <div class="change ${isUp ? 'up' : 'dn'}">${chgStr}</div>
+      <div class="mini-chart"><canvas id="${sparkId}"></canvas></div>`;
+
+    card.addEventListener('click', () => {
+      selectedTicker = ticker;
+      renderCards(weekDates);
+      renderLineChart(weekDates);
+      const lbl = document.getElementById('chart-lbl');
+      if (lbl) lbl.textContent = `${ticker} 已选中`;
+    });
+
+    grid.appendChild(card);
+    requestAnimationFrame(() => drawSparkline(sparkId, d, weekDates));
+  });
+}
+
+function getWeekChanges(d, weekDates) {
+  return weekDates.map(date => {
+    const idx = d.dates.indexOf(date);
+    if (idx < 0 || d.changes[idx] == null) return 0;
+    return d.changes[idx];
+  });
+}
+
+function drawSparkline(id, d, weekDates) {
+  const canvas = document.getElementById(id);
+  if (!canvas) return;
+  const vals = getWeekChanges(d, weekDates);
+  new Chart(canvas, {
+    type: 'bar',
+    data: {
+      labels: weekDates.map(fmtDate),
+      datasets: [{
+        data: vals,
+        backgroundColor: vals.map(v => v >= 0 ? '#3fb950' : '#f85149'),
+        borderRadius: 2,
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false, animation: false,
+      plugins: { legend: { display: false }, tooltip: { enabled: false } },
+      scales: { x: { display: false }, y: { display: false } }
+    }
+  });
+}
+
+// ── Line chart ───────────────────────────────────────────────────
+function renderLineChart(weekDates) {
+  const canvas = document.getElementById('line-chart');
+  if (!canvas) return;
+  if (lineChart) { lineChart.destroy(); lineChart = null; }
+
+  const datasets = SYMBOLS.map(({ ticker, color }) => {
+    const d = stockData[ticker];
+    const changes = d ? getWeekChanges(d, weekDates) : weekDates.map(() => null);
+    const isSel = ticker === selectedTicker;
+    return {
+      label: ticker,
+      data: changes,
+      borderColor: color,
+      backgroundColor: color + '18',
+      borderWidth: isSel ? 2.5 : 1.2,
+      borderDash: isSel ? [] : [5, 4],
+      pointRadius: isSel ? 4 : 2,
+      pointHoverRadius: 5,
+      fill: false,
+      tension: 0.35,
+      spanGaps: true,
+    };
+  });
+
+  lineChart = new Chart(canvas, {
+    type: 'line',
+    data: { labels: weekDates.map(fmtDate), datasets },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: {
+          display: true, position: 'top',
+          labels: { color: '#8b949e', font: { size: 11 }, boxWidth: 18, padding: 8 }
+        },
+        tooltip: {
+          backgroundColor: '#1c2128',
+          borderColor: '#30363d', borderWidth: 1,
+          titleColor: '#e6edf3', bodyColor: '#8b949e',
+          callbacks: {
+            label: ctx => {
+              const v = ctx.parsed.y;
+              if (v == null) return ` ${ctx.dataset.label}: —`;
+              return ` ${ctx.dataset.label}: ${v > 0 ? '+' : ''}${v.toFixed(2)}%`;
+            }
+          }
+        }
+      },
+      scales: {
+        x: { ticks: { color: '#8b949e', font: { size: 11 } }, grid: { color: '#21262d' } },
+        y: {
+          ticks: {
+            color: '#8b949e', font: { size: 11 },
+            callback: v => (v > 0 ? '+' : '') + v.toFixed(1) + '%'
+          },
+          grid: { color: '#21262d' }
+        }
+      }
+    }
+  });
+}
+
+// ── Heatmap ──────────────────────────────────────────────────────
+function renderHeatmap(weekDates) {
+  const table = document.getElementById('heatmap');
+  if (!table) return;
+
+  // Header row
+  const thead = document.createElement('thead');
+  thead.innerHTML = '<tr><th></th>' +
+    weekDates.map(d => `<th>${fmtDate(d)}<br><span style="font-size:9px;color:#484f58">${['日','一','二','三','四','五','六'][new Date(d+'T12:00:00').getDay()]}</span></th>`).join('') +
+    '</tr>';
+  table.appendChild(thead);
+
+  const tbody = document.createElement('tbody');
+  SYMBOLS.forEach(({ ticker }) => {
+    const d = stockData[ticker];
+    const row = document.createElement('tr');
+    row.innerHTML = `<td class="ticker-label">${ticker}</td>`;
+
+    weekDates.forEach(date => {
+      const td = document.createElement('td');
+      td.className = 'hm-cell';
+      const idx = d?.dates?.indexOf(date) ?? -1;
+      const v = (idx >= 0 && d.changes[idx] != null) ? d.changes[idx] : null;
+
+      if (v === null) {
+        td.style.background = '#21262d';
+        td.style.color = '#8b949e';
+        td.textContent = '—';
+      } else {
+        const intensity = Math.min(Math.abs(v) / 4, 1);
+        const alpha = 0.2 + intensity * 0.65;
+        if (v >= 0) {
+          td.style.background = `rgba(63,185,80,${alpha})`;
+          td.style.color = intensity > 0.5 ? '#fff' : '#3fb950';
+        } else {
+          td.style.background = `rgba(248,81,73,${alpha})`;
+          td.style.color = intensity > 0.5 ? '#fff' : '#f85149';
+        }
+        td.textContent = (v > 0 ? '+' : '') + v.toFixed(2) + '%';
+      }
+      row.appendChild(td);
+    });
+
+    tbody.appendChild(row);
+  });
+  table.appendChild(tbody);
+}
+
+// ── Today Signal ─────────────────────────────────────────────────
+let signalDate = null; // null = latest
+let realtimeTimer = null;
+
+async function refreshRealtime() {
+  const FUTURES = ['NQ=F', 'ES=F'];
+  const futResults = await Promise.allSettled(FUTURES.map(f => fetchFuturesQuote(f)));
+  futResults.forEach((r, i) => {
+    if (r.status === 'fulfilled') futuresData[FUTURES[i]] = r.value;
+  });
+  const stockResults = await Promise.allSettled(
+    SYMBOLS.map(s => fetchFuturesQuote(s.ticker))
+  );
+  stockResults.forEach((r, i) => {
+    const ticker = SYMBOLS[i].ticker;
+    if (r.status !== 'fulfilled' || !stockData[ticker]) return;
+    stockData[ticker].realtimePrice = r.value.realtimePrice;
+    stockData[ticker].intradayChg   = r.value.intradayChg;
+    stockData[ticker].intradayOtc   = r.value.intradayOtc;
+  });
+  const allDatesSet = new Set();
+  SYMBOLS.forEach(({ ticker }) => {
+    const d = stockData[ticker];
+    if (d) d.dates.forEach((dt, i) => { if (d.changes[i] != null) allDatesSet.add(dt); });
+  });
+  const allDates = [...allDatesSet].sort();
+  const targetDate = signalDate || allDates[allDates.length - 1];
+  if (targetDate === allDates[allDates.length - 1]) renderRealtimeLR(targetDate);
+}
+
+function renderTodaySignal() {
+  const verdictRow = document.getElementById('verdict-row');
+  if (!verdictRow) return;
+
+  // Build sorted date list from all available data
+  const allDatesSet = new Set();
+  SYMBOLS.forEach(({ ticker }) => {
+    const d = stockData[ticker];
+    if (d) d.dates.forEach((dt, i) => { if (d.changes[i] != null) allDatesSet.add(dt); });
+  });
+  const allDates = [...allDatesSet].sort();
+  if (allDates.length < 5) {
+    verdictRow.innerHTML = '<div style="color:var(--muted);font-size:12px;padding:12px">数据不足，请等待加载完成</div>';
+    return;
+  }
+
+  // Render date picker buttons (all trading dates, latest first)
+  const scrollEl = document.getElementById('sig-date-scroll');
+  if (scrollEl && !scrollEl.dataset.built) {
+    scrollEl.dataset.built = '1';
+    const reversedDates = [...allDates].reverse();
+    reversedDates.forEach((dt, i) => {
+      const btn = document.createElement('button');
+      btn.className = 'sig-date-btn' + (i === 0 ? ' latest' : '') + (!signalDate && i === 0 ? ' active' : signalDate === dt ? ' active' : '');
+      const d = new Date(dt + 'T12:00:00');
+      const days = ['日','一','二','三','四','五','六'];
+      btn.textContent = (i === 0 ? '今日 ' : '') + fmtDate(dt) + ' 周' + days[d.getDay()];
+      btn.dataset.date = dt;
+      btn.onclick = () => {
+        signalDate = dt;
+        document.querySelectorAll('.sig-date-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        renderSignalForDate(dt, allDates);
+      };
+      scrollEl.appendChild(btn);
+    });
+  }
+
+  // Worker 尚未返回时，只显示提示，不调用 renderSignalForDate（避免主线程卡死）
+  if (!_cachedRuleHits) {
+    verdictRow.innerHTML = '<div style="color:var(--muted);font-size:12px;padding:12px">⏳ 正在后台计算历史信号，请稍候…</div>';
+    return;
+  }
+
+  const targetDate = signalDate || allDates[allDates.length - 1];
+  renderSignalForDate(targetDate, allDates);
+}
+
+function renderSignalForDate(targetDate, allDates) {
+  const verdictRow = document.getElementById('verdict-row');
+  const rulesTitleEl = document.getElementById('sig-rules-title');
+  const rulesList    = document.getElementById('sig-rules-list');
+  const actualEl     = document.getElementById('actual-result');
+  if (!verdictRow) return;
+
+  const isLatest  = targetDate === allDates[allDates.length - 1];
+  const dateIdx   = allDates.indexOf(targetDate);
+  const nextDate  = dateIdx >= 0 && dateIdx < allDates.length - 1 ? allDates[dateIdx + 1] : null;
+
+  // Build per-stock snapshot for targetDate
+  // IMPORTANT: observations must only use data UP TO targetDate (no lookahead)
+  const todayRow = SYMBOLS.map(({ ticker, color, name }) => {
+    const d = stockData[ticker];
+    if (!d) return null;
+    const ti = d.dates.indexOf(targetDate);
+    if (ti < 0 || d.changes[ti] == null) return null;
+    const pi = ti > 0 ? ti - 1 : -1;
+    return { ticker, color, name,
+      todayChg: d.changes[ti],
+      prevChg:  pi >= 0 ? d.changes[pi] : null };
+  }).filter(Boolean);
+
+  if (!todayRow.length) {
+    verdictRow.innerHTML = '<div style="color:var(--muted);font-size:12px;padding:8px">该日期无数据</div>';
+    return;
+  }
+
+  // Rank + breadth
+  const sorted = [...todayRow].sort((a, b) => b.todayChg - a.todayChg);
+  sorted.forEach((e, i) => { e.rank = i + 1; e.total = sorted.length; });
+  const marketUpCount = todayRow.filter(e => e.todayChg > 0).length;
+  todayRow.forEach(e => { e.marketUpCount = marketUpCount; });
+
+  const allObs   = buildObservations();
+  const allConds = [...CONDITIONS, ...buildComboConds()];
+  const ruleHits = buildRuleHits(); // 预计算命中表
+
+  // 二分查找：找到 arr 中最后一个 date < targetDate 的索引+1（即切片长度）
+  function bisectLeft(arr, target) {
+    let lo = 0, hi = arr.length;
+    while (lo < hi) { const mid = (lo + hi) >>> 1; arr[mid].date < target ? lo = mid + 1 : hi = mid; }
+    return lo;
+  }
+
+  const stockSignals = todayRow.map(stock => {
+    const tickerHits = ruleHits[stock.ticker] || {};
+    const hitRules = [];
+    allConds.forEach(cond => {
+      if (!cond.fn(stock)) return;
+      // 用二分查找截断到 targetDate 之前，避免 O(n) filter
+      const all = tickerHits[cond.key] || [];
+      const n = bisectLeft(all, targetDate);
+      if (n < 3) return;
+      let wins = 0, avg = 0;
+      for (let i = 0; i < n; i++) { if (all[i].nextChg > 0) wins++; avg += all[i].nextChg; }
+      avg /= n;
+      const wr = wins / n;
+      hitRules.push({ label: cond.label, wr, avg, n, wins });
+    });
+    let wSum = 0, wTot = 0;
+    hitRules.forEach(r => { wSum += (r.wr - 0.5) * r.n; wTot += r.n; });
+    const longScore = wTot > 0 ? wSum / wTot : 0;
+
+    // 期货模型信号：最新日期用实时数据，历史日期用当日开盘涨跌 × 历史回归系数
+    let fp = null, fpScore = 0, fpDir = 'neut';
+    let histFutScore = 0, histFutHasData = false;
+    if (isLatest) {
+      fp = futuresPredict(stock.ticker);
+      fpScore = fp ? fp.score : 0;
+      fpDir   = fp ? fp.dir : 'neut';
+    } else {
+      // 历史日期：用期货开盘涨跌 × beta 预测当日收盘方向
+      const fb     = calcFutureOpenBeta(stock.ticker);
+      const nqOpen = getFuturesOpenChg('NQ=F', targetDate);
+      const esOpen = getFuturesOpenChg('ES=F', targetDate);
+      let futPred = 0, futWt = 0;
+      if (nqOpen != null && fb.nqPts >= 10) { futPred += fb.nq * nqOpen * fb.nqPts; futWt += fb.nqPts; }
+      if (esOpen != null && fb.esPts >= 10) { futPred += fb.es * esOpen * fb.esPts; futWt += fb.esPts; }
+      if (futWt > 0) {
+        histFutScore = futPred / futWt;
+        histFutHasData = true;
+        const std = 1.5; // approximate std for normalization
+        fpScore = histFutScore / std;
+        fpDir   = fpScore > 0.15 ? 'long' : fpScore < -0.15 ? 'short' : 'neut';
+      }
+    }
+
+    // 综合分：规则引擎 60% + 期货模型 40%（历史日期期货数据有时缺失则纯规则）
+    const hasFutSignal = isLatest ? !!fp : histFutHasData;
+    const combinedScore = hasFutSignal ? longScore * 0.6 + fpScore * 0.4 : longScore;
+
+    return { ...stock, hitRules, longScore, fp, fpDir, fpScore, histFutHasData, combinedScore };
+  });
+
+  const totalScore = stockSignals.reduce((s, x) => s + x.combinedScore, 0) / stockSignals.length;
+  const conf = Math.min(100, Math.abs(totalScore) / 0.3 * 100);
+  const confLabel = conf >= 70 ? '高置信度' : conf >= 40 ? '中置信度' : '低置信度';
+  const overallDir  = totalScore > 0.05 ? 'long' : totalScore < -0.05 ? 'short' : 'neut';
+  const overallWord = overallDir === 'long' ? '做多' : overallDir === 'short' ? '做空' : '观望';
+
+  stockSignals.sort((a, b) => b.combinedScore - a.combinedScore);
+  const top1    = stockSignals[0];
+  const top1Dir = top1.combinedScore > 0.05 ? 'long' : top1.combinedScore < -0.05 ? 'short' : 'neut';
+
+  // ── Build actuals map ──
+  const actualsMap = {};
+  if (nextDate) {
+    stockSignals.forEach(s => {
+      const d = stockData[s.ticker];
+      const ni = d ? d.dates.indexOf(nextDate) : -1;
+      actualsMap[s.ticker] = ni >= 0 && d.changes[ni] != null ? d.changes[ni] : null;
+    });
+  }
+  const hasActuals = Object.values(actualsMap).some(v => v !== null);
+
+  // Valid predicted (non-neut) hits — use combinedScore (rules + futures)
+  const validPredicted = stockSignals.filter(s => Math.abs(s.combinedScore) > 0.05);
+  const hitCount = validPredicted.filter(s => {
+    const nc = actualsMap[s.ticker];
+    if (nc === null) return false;
+    return s.combinedScore > 0 ? nc > 0 : nc < 0;
+  }).length;
+  const hitRate = hasActuals && validPredicted.length ? hitCount / validPredicted.length : null;
+
+  if (actualEl) actualEl.innerHTML = '';
+
+  // ── Verdict summary row ──
+  verdictRow.innerHTML = '';
+  const dateLabel = isLatest ? '明日操作建议' : `${fmtDate(targetDate)} 收盘后建议`;
+
+  const main = document.createElement('div');
+  main.className = `verdict-main ${overallDir}`;
+  let hitRateHtml = '';
+  if (hitRate !== null) {
+    const rc = hitRate >= 0.6 ? '#3fb950' : hitRate >= 0.4 ? '#e3b341' : '#f85149';
+    hitRateHtml = `<div style="margin-top:8px;padding:6px 10px;border-radius:7px;background:#0d1117;font-size:12px">
+      次日命中率 <strong style="color:${rc};font-size:15px">${Math.round(hitRate*100)}%</strong>
+      <span style="color:var(--muted);font-size:10px"> (${hitCount}/${validPredicted.length}只)</span>
+    </div>`;
+  } else if (isLatest) {
+    hitRateHtml = `<div style="margin-top:8px;font-size:10px;color:var(--muted)">次日结果待定</div>`;
+  }
+  // 期货摘要：最新日期用实时数据，历史日期用当日开盘涨跌
+  const nqChgNow = futuresData['NQ=F']?.intradayChg;
+  const esChgNow = futuresData['ES=F']?.intradayChg;
+  const nqHistOpen = getFuturesOpenChg('NQ=F', targetDate);
+  const esHistOpen = getFuturesOpenChg('ES=F', targetDate);
+  const showNQ = isLatest ? nqChgNow : nqHistOpen;
+  const showES = isLatest ? esChgNow : esHistOpen;
+  const futLabel = isLatest ? '期货实时' : '期货今开';
+  const futNote  = isLatest ? '已纳入综合评分（规则60% + 期货40%）' : '开盘涨跌已纳入规则条件及综合评分';
+  const futSummary = (showNQ != null || showES != null) ? `
+    <div style="margin-top:8px;padding:6px 10px;border-radius:7px;background:#0d1117;font-size:11px;
+      display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+      <span style="color:var(--muted)">${futLabel}</span>
+      ${showNQ != null ? `<span>NQ=F <span style="color:${showNQ>=0?'#3fb950':'#f85149'};font-weight:700">${showNQ>0?'+':''}${showNQ.toFixed(2)}%</span></span>` : ''}
+      ${showES != null ? `<span>ES=F <span style="color:${showES>=0?'#3fb950':'#f85149'};font-weight:700">${showES>0?'+':''}${showES.toFixed(2)}%</span></span>` : ''}
+      <span style="color:var(--muted);font-size:10px">${futNote}</span>
+    </div>` : '';
+
+  main.innerHTML = `
+    <div class="verdict-label">${dateLabel}</div>
+    <div class="verdict-word">${overallWord}</div>
+    <div style="font-size:13px;font-weight:700;margin:6px 0 2px;color:${top1.color}">
+      首选：${top1.ticker} · ${top1.name}
+    </div>
+    <div class="verdict-conf">
+      置信度 <strong>${conf.toFixed(0)}%</strong> · ${confLabel} ·
+      <span style="font-size:10px">${allObs.length} 条历史观测</span>
+    </div>
+    ${futSummary}
+    ${hitRateHtml}
+  `;
+  verdictRow.appendChild(main);
+
+  // ── Per-stock comparison table ──
+  const tableWrap = document.createElement('div');
+  tableWrap.className = 'verdict-stocks';
+
+  // Header
+  const hdr = document.createElement('div');
+  const hasFut = stockSignals.some(s => s.fp || s.histFutHasData);
+  const cols0 = `40px 60px ${hasFut?'60px ':''} 52px 14px ${hasActuals?'62px 56px':''}`;
+  hdr.style.cssText = `font-size:10px;color:var(--muted);padding:3px 10px 5px;
+    display:grid;grid-template-columns:${cols0};gap:6px;align-items:center`;
+  const futColLabel = isLatest ? '期货模型' : '期货开盘';
+  hdr.innerHTML = `<span>标的</span><span>规则引擎</span>${hasFut?`<span style="text-align:center">${futColLabel}</span>`:''}<span style="text-align:center">当日涨跌</span><span></span>
+    ${hasActuals ? `<span style="text-align:center">次日实际</span><span style="text-align:center">结果</span>` : ''}`;
+  tableWrap.appendChild(hdr);
+
+  stockSignals.forEach((s, idx) => {
+    const dir      = s.longScore > 0.05 ? 'long' : s.longScore < -0.05 ? 'short' : 'neut';
+    const dirWord  = dir === 'long' ? '▲ 做多' : dir === 'short' ? '▼ 做空' : '— 观望';
+    const dirColor = dir === 'long' ? '#3fb950' : dir === 'short' ? '#f85149' : '#8b949e';
+    const dirBg    = dir === 'long' ? 'rgba(63,185,80,0.12)' : dir === 'short' ? 'rgba(248,81,73,0.12)' : 'transparent';
+    const todayColor = s.todayChg >= 0 ? '#3fb950' : '#f85149';
+    const barPct   = Math.min(100, Math.abs(s.longScore) / 0.3 * 100).toFixed(0);
+
+    const nextChg = actualsMap[s.ticker] ?? null;
+    const hit = nextChg === null || dir === 'neut' ? null : dir === 'long' ? nextChg > 0 : nextChg < 0;
+    const nextColor = nextChg === null ? '#8b949e' : nextChg >= 0 ? '#3fb950' : '#f85149';
+    const hitBg    = hit === null ? 'transparent' : hit ? 'rgba(63,185,80,0.15)' : 'rgba(248,81,73,0.15)';
+    const hitColor = hit === null ? '#8b949e' : hit ? '#3fb950' : '#f85149';
+    const hitWord  = hit === null ? '—' : hit ? '✓ 命中' : '✗ 未中';
+
+    // 期货列：最新日期用实时，历史日期用开盘涨跌方向
+    const fpDir2   = s.fp ? s.fp.dir : (s.histFutHasData ? s.fpDir : null);
+    const fpColor2 = fpDir2 === 'long' ? '#3fb950' : fpDir2 === 'short' ? '#f85149' : '#8b949e';
+    const fpWord2  = fpDir2 === 'long' ? '▲ 涨' : fpDir2 === 'short' ? '▼ 跌' : (fpDir2 === 'neut' ? '— 中性' : '—');
+    const fpPred   = s.fp ? `${s.fp.predicted>0?'+':''}${s.fp.predicted.toFixed(2)}%`
+                   : (s.histFutHasData ? '开盘驱动' : '');
+
+    const cols = `40px 60px ${hasFut?'60px ':''} 52px 14px ${hasActuals ? '62px 56px' : ''}`;
+    const row = document.createElement('div');
+    row.className = 'vs-row';
+    row.style.cssText = `display:grid;grid-template-columns:${cols};gap:6px;align-items:center;
+      ${idx === 0 ? `border-color:${dirColor};` : ''}`;
+
+    row.innerHTML = `
+      <span style="color:${s.color};font-weight:700;font-size:11px">${idx===0?'⭐':''} ${s.ticker}</span>
+      <span style="background:${dirBg};color:${dirColor};font-weight:700;font-size:11px;
+        padding:3px 6px;border-radius:6px;text-align:center;
+        border:1px solid ${dir==='neut'?'transparent':dirColor+'55'}">
+        ${dirWord}
+        <div style="height:2px;background:#21262d;border-radius:1px;margin-top:3px;overflow:hidden">
+          <div style="height:100%;width:${barPct}%;background:${dirColor};border-radius:1px"></div>
+        </div>
+      </span>
+      ${hasFut ? `<span style="color:${fpColor2};font-size:11px;text-align:center;font-weight:700">
+        ${fpWord2}<br><span style="font-size:9px;font-weight:400;color:var(--muted)">${fpPred}</span>
+      </span>` : ''}
+      <span style="color:${todayColor};font-size:11px;text-align:center">
+        ${s.todayChg>0?'+':''}${s.todayChg.toFixed(2)}%
+      </span>
+      <span style="color:var(--muted);font-size:12px;text-align:center">→</span>
+      ${hasActuals ? `
+        <span style="color:${nextColor};font-size:11px;font-weight:600;text-align:center">
+          ${nextChg !== null ? (nextChg>0?'+':'') + nextChg.toFixed(2)+'%' : '—'}
+        </span>
+        <span style="background:${hitBg};color:${hitColor};font-size:10px;font-weight:700;
+          padding:2px 6px;border-radius:5px;text-align:center;
+          border:1px solid ${hit===null?'transparent':hitColor+'55'}">
+          ${hitWord}
+        </span>
+      ` : ''}
+    `;
+    tableWrap.appendChild(row);
+  });
+  verdictRow.appendChild(tableWrap);
+
+  // ── Rules ──
+  const top1Rules = [...top1.hitRules].sort((a, b) => Math.abs(b.wr-0.5) - Math.abs(a.wr-0.5));
+  const otherHits = [];
+  stockSignals.slice(1).forEach(s => s.hitRules.forEach(r => otherHits.push({...r, ticker:s.ticker, color:s.color})));
+  otherHits.sort((a, b) => Math.abs(b.wr-0.5) - Math.abs(a.wr-0.5));
+  const totalRuleCount = stockSignals.reduce((s, x) => s + x.hitRules.length, 0);
+
+  if (rulesTitleEl) rulesTitleEl.innerHTML = top1Rules.length
+    ? `<strong style="color:${top1.color}">${top1.ticker}</strong> ${top1Dir==='long'?'做多':'做空'}的依据（${top1Rules.length} 条规则 · 全部共 ${totalRuleCount} 条）`
+    : '无有效规则触发（历史数据不足3次）';
+
+  if (rulesList) {
+    rulesList.innerHTML = '';
+    const renderRule = (r, sc, st, hl) => {
+      const wrColor  = r.wr>=0.65?'#3fb950':r.wr>=0.55?'#e3b341':r.wr<=0.4?'#f85149':'#8b949e';
+      const dirLabel = r.wr>=0.55?'↑ 利多':r.wr<=0.45?'↓ 利空':'→ 中性';
+      const dirColor = r.wr>=0.55?'#3fb950':r.wr<=0.45?'#f85149':'#8b949e';
+      const avgColor = r.avg>=0?'#3fb950':'#f85149';
+      const div = document.createElement('div');
+      div.className = 'sig-rule-item';
+      if (hl) div.style.borderColor = sc;
+      div.innerHTML = `
+        <span class="sri-ticker" style="color:${sc}">${st}</span>
+        <span class="sri-desc">${r.label.replace(/<[^>]+>/g,'')}</span>
+        <span class="sri-wr" style="color:${wrColor}">历史胜率 ${Math.round(r.wr*100)}%（${r.wins}/${r.n}次）</span>
+        <span style="color:${avgColor};font-size:10px">均收益 ${r.avg>0?'+':''}${r.avg.toFixed(2)}%</span>
+        <span class="sri-dir" style="color:${dirColor}">${dirLabel}</span>
+      `;
+      rulesList.appendChild(div);
+    };
+    top1Rules.slice(0,6).forEach((r,i) => renderRule(r, top1.color, top1.ticker, i===0));
+    if (otherHits.length) {
+      const sep = document.createElement('div');
+      sep.style.cssText = 'font-size:10px;color:var(--muted);padding:8px 4px 4px';
+      sep.textContent = '其他标的信号';
+      rulesList.appendChild(sep);
+      otherHits.slice(0,4).forEach(r => renderRule(r, r.color, r.ticker, false));
+    }
+  }
+
+  // ── Miss analysis ──
+  renderMissAnalysis(stockSignals, actualsMap, ruleHits, targetDate, allConds, nextDate);
+
+  // ── 实时LR预测（仅最新日期显示）──
+  if (isLatest) renderRealtimeLR(targetDate);
+}
+
+function renderRealtimeLR(targetDate) {
+  const parent = document.getElementById('miss-analysis')?.parentElement;
+  if (!parent) return;
+  let el = document.getElementById('realtime-lr-panel');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'realtime-lr-panel';
+    el.style.cssText = 'margin-top:14px;border-top:1px solid var(--border);padding-top:12px';
+    parent.appendChild(el);
+  }
+
+  const nqf = futuresData['NQ=F'];
+  const esf = futuresData['ES=F'];
+  const nqChg = nqf?.intradayChg;
+  const esChg = esf?.intradayChg;
+
+  if (nqChg == null && esChg == null) {
+    el.innerHTML = '<div style="font-size:11px;color:var(--muted)">📡 期货数据加载中…</div>';
+    return;
+  }
+
+  const dirColor = d => d === 'long' ? '#3fb950' : d === 'short' ? '#f85149' : '#8b949e';
+  const dirWord  = d => d === 'long' ? '▲ 今日看涨' : d === 'short' ? '▼ 今日看跌' : '— 观望';
+
+  const fmtChg = (v, suffix='') => v == null ? '—'
+    : `<span style="color:${v>=0?'#3fb950':'#f85149'};font-weight:700">${v>0?'+':''}${v.toFixed(2)}%${suffix}</span>`;
+
+  const futBar = `
+    <div style="padding:8px 10px;border-radius:7px;background:#0d1117;border:1px solid var(--border);
+      margin-bottom:8px;display:flex;align-items:center;flex-wrap:wrap;gap:4px">
+      <span style="font-size:10px;color:var(--muted);margin-right:8px">期货实时：</span>
+      ${nqf ? `<span style="margin-right:14px;font-size:11px"><span style="color:var(--muted)">NQ=F </span>$${nqf.realtimePrice?.toFixed(2)} ${fmtChg(nqChg)}</span>` : ''}
+      ${esf ? `<span style="font-size:11px"><span style="color:var(--muted)">ES=F </span>$${esf.realtimePrice?.toFixed(2)} ${fmtChg(esChg)}</span>` : ''}
+    </div>`;
+
+  const rows = SYMBOLS.filter(s => s.ticker !== 'QQQ').map(({ ticker, color, name }) => {
+    const fp  = futuresPredict(ticker);     // 今日收盘预测（期货实时）
+    const fop = futuresOpenPredict(ticker); // 次日收盘预测（期货开盘模拟）
+    const d   = stockData[ticker];
+    if (!d) return null;
+    return { ticker, color, name, fp, fop, price: d.realtimePrice, intradayChg: d.intradayChg };
+  }).filter(r => r.fp || r.fop);
+
+  // 今日收盘预测排名
+  const sorted   = [...rows].filter(r=>r.fp).sort((a, b) => b.fp.score - a.fp.score);
+  const topLong  = sorted.find(r => r.fp.dir === 'long');
+  const topShort = [...sorted].reverse().find(r => r.fp.dir === 'short');
+
+  // 次日收盘预测排名
+  const sortedNext    = [...rows].filter(r=>r.fop).sort((a, b) => b.fop.score - a.fop.score);
+  const topLongNext   = sortedNext.find(r => r.fop.dir === 'long');
+  const topShortNext  = [...sortedNext].reverse().find(r => r.fop.dir === 'short');
+
+  const fmtWR = (wr) => wr ? `历史同向胜率 <strong style="color:var(--text)">${(wr.rate*100).toFixed(0)}%</strong>（${wr.n}次）` : '';
+  const fmtContrib = (beta, now, contrib, sym) => now != null
+    ? `${sym} ${now>0?'+':''}${now.toFixed(2)}% × 系数${beta.toFixed(2)} = <strong style="color:${contrib>=0?'#3fb950':'#f85149'}">${contrib>0?'+':''}${contrib.toFixed(2)}%</strong>` : '';
+
+  const recCard = (r, side) => {
+    if (!r) return '';
+    const { fp, ticker, color, name, price } = r;
+    const borderColor = side === 'long' ? '#3fb950' : '#f85149';
+    const label       = side === 'long' ? '▲ 最强看多' : '▼ 最强看空';
+    const labelColor  = side === 'long' ? '#3fb950' : '#f85149';
+    const nqLine  = fmtContrib(fp.nqBeta, fp.nqNow, fp.nqContrib, 'NQ=F');
+    const esLine  = fmtContrib(fp.esBeta, fp.esNow, fp.esContrib, 'ES=F');
+    const nqWR    = fmtWR(fp.nqWinRate);
+    const esWR    = fmtWR(fp.esWinRate);
+    const total   = fp.nqContrib + fp.esContrib;
+    return `
+    <div style="flex:1;min-width:0;border:1px solid ${borderColor};border-radius:10px;padding:10px 12px;background:#0d1117">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+        <span style="color:${color};font-size:15px;font-weight:800">${ticker}</span>
+        <span style="color:${labelColor};font-weight:700;font-size:12px">${label}</span>
+      </div>
+      <div style="font-size:10px;color:var(--muted);line-height:1.9">
+        ${price != null ? `<div>当前价格 <strong style="color:var(--text)">$${price.toFixed(2)}</strong></div>` : ''}
+        ${nqLine ? `<div>${nqLine}</div>` : ''}
+        ${esLine ? `<div>${esLine}</div>` : ''}
+        <div>综合预测收盘 <strong style="color:${total>=0?'#3fb950':'#f85149'}">${total>0?'+':''}${total.toFixed(2)}%</strong></div>
+        ${nqWR ? `<div>${nqWR}</div>` : ''}
+        ${esWR ? `<div style="margin-top:2px">${esWR}</div>` : ''}
+      </div>
+    </div>`;
+  };
+
+  // 次日预测卡片（期货开盘涨跌 → 次日个股收盘）
+  const recCardNext = (r, side) => {
+    if (!r || !r.fop) return '';
+    const { fop, ticker, color, price } = r;
+    const borderColor = side === 'long' ? '#3fb950' : '#f85149';
+    const label       = side === 'long' ? '▲ 次日看多' : '▼ 次日看空';
+    const labelColor  = side === 'long' ? '#3fb950' : '#f85149';
+    const nqLine  = fmtContrib(fop.nqBeta, fop.nqNow, fop.nqContrib, 'NQ开盘');
+    const esLine  = fmtContrib(fop.esBeta, fop.esNow, fop.esContrib, 'ES开盘');
+    const nqWR    = fmtWR(fop.nqWinRate);
+    const esWR    = fmtWR(fop.esWinRate);
+    const total   = fop.nqContrib + fop.esContrib;
+    return `
+    <div style="flex:1;min-width:0;border:1px solid ${borderColor};border-radius:10px;padding:10px 12px;background:#0d1117">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+        <span style="color:${color};font-size:15px;font-weight:800">${ticker}</span>
+        <span style="color:${labelColor};font-weight:700;font-size:12px">${label}</span>
+      </div>
+      <div style="font-size:10px;color:var(--muted);line-height:1.9">
+        ${price != null ? `<div>当前价格 <strong style="color:var(--text)">$${price.toFixed(2)}</strong></div>` : ''}
+        ${nqLine ? `<div>${nqLine}</div>` : ''}
+        ${esLine ? `<div>${esLine}</div>` : ''}
+        <div>预测次日收盘 <strong style="color:${total>=0?'#3fb950':'#f85149'}">${total>0?'+':''}${total.toFixed(2)}%</strong></div>
+        ${nqWR ? `<div>${nqWR}</div>` : ''}
+        ${esWR ? `<div>${esWR}</div>` : ''}
+      </div>
+    </div>`;
+  };
+
+  const recSection = (topLong || topShort || topLongNext || topShortNext) ? `
+    <div style="font-size:10px;color:var(--muted);margin-bottom:4px">📊 今日收盘预测（期货实时涨跌）</div>
+    <div style="display:flex;gap:10px;margin-bottom:10px">
+      ${recCard(topLong,  'long')}
+      ${recCard(topShort, 'short')}
+    </div>
+    ${(topLongNext || topShortNext) ? `
+    <div style="font-size:10px;color:var(--muted);margin-bottom:4px">🌙 次日收盘预测（期货开盘涨跌历史回归）</div>
+    <div style="display:flex;gap:10px;margin-bottom:10px">
+      ${recCardNext(topLongNext,  'long')}
+      ${recCardNext(topShortNext, 'short')}
+    </div>` : ''}` : '';
+
+  el.innerHTML = `
+    <div style="font-size:11px;color:var(--muted);margin-bottom:8px">
+      📡 期货驱动预测（NQ/ES实时涨跌 → 今日个股收盘方向）
+    </div>
+    ${futBar}
+    ${recSection}
+    ${rows.map(r => {
+      const { fp } = r;
+      const nqLine = fp.nqNow != null
+        ? `NQ ${fp.nqNow>0?'+':''}${fp.nqNow.toFixed(2)}%×${fp.nqBeta.toFixed(2)}=${fp.nqContrib>0?'+':''}${fp.nqContrib.toFixed(2)}%` : '';
+      const esLine = fp.esNow != null
+        ? `ES ${fp.esNow>0?'+':''}${fp.esNow.toFixed(2)}%×${fp.esBeta.toFixed(2)}=${fp.esContrib>0?'+':''}${fp.esContrib.toFixed(2)}%` : '';
+      const detail = [nqLine, esLine].filter(Boolean).join('  ');
+      const priceStr = r.price != null ? `$${r.price.toFixed(2)}` : '—';
+      const chgVal = r.intradayChg;
+      const chgStr = chgVal != null
+        ? `<span style="color:${chgVal>=0?'#3fb950':'#f85149'}">${chgVal>0?'+':''}${chgVal.toFixed(2)}%</span>`
+        : '<span style="color:var(--muted)">休市</span>';
+      const isTop = r === topLong || r === topShort;
+      return `
+      <div style="display:grid;grid-template-columns:52px 100px 1fr 80px 60px;
+        align-items:center;gap:8px;padding:6px 10px;border-radius:7px;
+        background:#0d1117;border:1px solid ${isTop ? dirColor(fp.dir) : 'var(--border)'};
+        margin-bottom:5px;font-size:11px">
+        <span style="color:${r.color};font-weight:700">${r.ticker}</span>
+        <span style="color:var(--muted)">${priceStr} ${chgStr}</span>
+        <span style="color:var(--muted);font-size:10px">${detail}</span>
+        <span style="color:${dirColor(fp.dir)};font-weight:700">${dirWord(fp.dir)}</span>
+        <span style="color:var(--muted);font-size:10px">
+          置信 ${Math.min(100,Math.abs(fp.score)/0.5*100).toFixed(0)}%
+        </span>
+      </div>
+    `}).join('')}
+  `;
+}
+
+function renderMissAnalysis(stockSignals, actualsMap, ruleHits, targetDate, allConds, nextDate) {
+  const el = document.getElementById('miss-analysis');
+  if (!el) return;
+  el.innerHTML = '';
+
+  if (!nextDate) return; // no actuals yet
+
+  // Find missed stocks: had a directional signal but was wrong
+  const missed = stockSignals.filter(s => {
+    const nc = actualsMap[s.ticker];
+    if (nc === null || Math.abs(s.longScore) <= 0.05) return false;
+    return s.longScore > 0 ? nc <= 0 : nc >= 0;
+  });
+
+  if (!missed.length) {
+    el.innerHTML = `<div class="miss-section"><div class="miss-title" style="color:#3fb950">✓ 本次没有未命中的方向性预测</div></div>`;
+    return;
+  }
+
+  el.innerHTML = `<div class="miss-section"><div class="miss-title">📋 未命中原因分析（${missed.length} 只）</div><div id="miss-cards"></div></div>`;
+  const cardsEl = document.getElementById('miss-cards');
+
+  missed.forEach(s => {
+    const nc = actualsMap[s.ticker];
+    const predDir  = s.longScore > 0 ? 'long' : 'short';
+    const predWord = predDir === 'long' ? '做多' : '做空';
+    const predColor = predDir === 'long' ? '#3fb950' : '#f85149';
+    const ncColor  = nc >= 0 ? '#3fb950' : '#f85149';
+
+    const reasons = [];
+
+    // ① 信号强度本身偏弱
+    const confPct = Math.min(100, Math.abs(s.longScore) / 0.3 * 100);
+    if (confPct < 40) {
+      reasons.push({
+        icon: '⚠️',
+        text: `信号置信度仅 <em>${confPct.toFixed(0)}%</em>，属于弱信号区间（&lt;40%），预测本身不确定性较高`
+      });
+    }
+
+    // ② 触发规则数量少
+    if (s.hitRules.length <= 2) {
+      reasons.push({
+        icon: '📊',
+        text: `仅触发 <em>${s.hitRules.length} 条</em>历史规则，规则覆盖不足，信号基础薄弱`
+      });
+    }
+
+    // ③ 最强规则的历史胜率本身不高
+    const topRule = [...s.hitRules].sort((a,b) => Math.abs(b.wr-0.5) - Math.abs(a.wr-0.5))[0];
+    if (topRule && topRule.wr < 0.65 && topRule.wr > 0.35) {
+      reasons.push({
+        icon: '🎲',
+        text: `最强规则历史胜率仅 <em>${Math.round(topRule.wr*100)}%</em>（${topRule.wins}/${topRule.n}次），
+               接近随机水平，统计优势有限`
+      });
+    }
+
+    // ④ 检测是否存在反向强信号被压制（用 ruleHits 二分查找，避免全量扫描）
+    const tickerHits = ruleHits[s.ticker] || {};
+    const reverseRules = allConds.map(cond => {
+      if (!cond.fn(s)) return null;
+      const allHits = tickerHits[cond.key] || [];
+      // 二分截断到 targetDate 之前
+      let lo = 0, hi = allHits.length;
+      while (lo < hi) { const mid = (lo + hi) >>> 1; allHits[mid].date < targetDate ? lo = mid + 1 : hi = mid; }
+      const n = lo;
+      if (n < 3) return null;
+      let wins = 0, avg = 0;
+      for (let i = 0; i < n; i++) { if (allHits[i].nextChg > 0) wins++; avg += allHits[i].nextChg; }
+      avg /= n;
+      const wr = wins / n;
+      const isOpposite = predDir === 'long' ? wr < 0.4 : wr > 0.6;
+      if (!isOpposite) return null;
+      return { label: cond.label.replace(/<[^>]+>/g,''), wr, n, wins, avg };
+    }).filter(Boolean).sort((a,b) => Math.abs(b.wr-0.5) - Math.abs(a.wr-0.5));
+
+    if (reverseRules.length > 0) {
+      const rr = reverseRules[0];
+      const rrDir = predDir === 'long' ? '利空' : '利多';
+      reasons.push({
+        icon: '🔄',
+        text: `存在被模型忽略的<em>反向信号</em>：「${rr.label}」历史胜率 <em>${Math.round(rr.wr*100)}%</em>（${rr.wins}/${rr.n}次），偏向${rrDir}，与本次预测方向相悖`
+      });
+    }
+
+    // ⑤ 样本量限制
+    const maxN = s.hitRules.reduce((mx, r) => Math.max(mx, r.n), 0);
+    if (maxN < 10) {
+      reasons.push({
+        icon: '📉',
+        text: `规则最大样本量仅 <em>${maxN} 次</em>，历史数据偏少，统计结论稳定性不足`
+      });
+    }
+
+    // ⑥ 当日实际涨跌与预测方向的幅度
+    const todayChg = s.todayChg;
+    if (predDir === 'long' && todayChg > 3) {
+      reasons.push({
+        icon: '🔥',
+        text: `当日已大涨 <em>+${todayChg.toFixed(2)}%</em>，次日高位回调概率上升，追涨风险较高`
+      });
+    } else if (predDir === 'short' && todayChg < -3) {
+      reasons.push({
+        icon: '🔥',
+        text: `当日已大跌 <em>${todayChg.toFixed(2)}%</em>，次日超跌反弹概率上升，做空风险较高`
+      });
+    }
+
+    // ⑦ 市场整体方向与信号相反
+    const mktUp = s.marketUpCount >= 5;
+    const mktDn = s.marketUpCount <= 2;
+    if (predDir === 'short' && mktUp) {
+      reasons.push({
+        icon: '🌊',
+        text: `当日七姐妹中 <em>${s.marketUpCount} 只</em>上涨，市场整体偏强，逆势做空面临更大阻力`
+      });
+    } else if (predDir === 'long' && mktDn) {
+      reasons.push({
+        icon: '🌊',
+        text: `当日七姐妹中仅 <em>${s.marketUpCount} 只</em>上涨，市场整体偏弱，顺势做多需更强确认`
+      });
+    }
+
+    if (!reasons.length) {
+      reasons.push({
+        icon: '❓',
+        text: `无法从已有条件中找到明确原因，可能属于低概率随机事件（即使胜率70%的规则也有30%会失败）`
+      });
+    }
+
+    const card = document.createElement('div');
+    card.className = 'miss-card';
+    card.innerHTML = `
+      <div class="miss-card-header">
+        <span class="mc-ticker" style="color:${s.color}">${s.ticker}</span>
+        <span class="mc-pred" style="background:${predDir==='long'?'rgba(63,185,80,0.15)':'rgba(248,81,73,0.15)'};
+          color:${predColor};border:1px solid ${predColor}55">
+          预测${predWord}
+        </span>
+        <span class="mc-actual" style="color:${ncColor}">
+          实际 ${nc>0?'+':''}${nc.toFixed(2)}%
+        </span>
+        <span class="mc-badge">✗ 未命中</span>
+      </div>
+      <div class="miss-reason">
+        ${reasons.map(r => `
+          <div class="miss-reason-row">
+            <span class="mr-icon">${r.icon}</span>
+            <span class="mr-text">${r.text}</span>
+          </div>`).join('')}
+      </div>
+    `;
+    cardsEl.appendChild(card);
+  });
+}
+
+// ── Rule Miner ───────────────────────────────────────────────────
+// Build a flat list of daily observations for every stock × every day
+// Each observation: { ticker, date, todayChg, prevChg, rank, marketUpCount, nextChg }
+function buildObservations() {
+  if (_cachedObs) return _cachedObs;
+  const allDatesSet = new Set();
+  SYMBOLS.forEach(({ ticker }) => {
+    const d = stockData[ticker];
+    if (d) d.dates.forEach((dt, i) => { if (d.changes[i] != null) allDatesSet.add(dt); });
+  });
+  const allDates = [...allDatesSet].sort();
+
+  const obs = [];
+
+  for (let di = 0; di < allDates.length - 1; di++) {
+    const today = allDates[di];
+    const tomorrow = allDates[di + 1];
+
+    // Gather today's changes for all stocks
+    const row = SYMBOLS.map(({ ticker }) => {
+      const d = stockData[ticker];
+      if (!d) return null;
+      const ti = d.dates.indexOf(today);
+      const ni = d.dates.indexOf(tomorrow);
+      const pi = ti > 0 ? ti - 1 : -1;
+      return {
+        ticker,
+        todayChg:  ti >= 0 && d.changes[ti] != null ? d.changes[ti] : null,
+        prevChg:   pi >= 0 && d.changes[pi] != null ? d.changes[pi] : null,
+        nextChg:   ni >= 0 && d.changes[ni] != null ? d.changes[ni] : null,
+      };
+    }).filter(e => e && e.todayChg != null);
+
+    if (row.length < 4) continue;
+
+    // Rank by today's change desc (rank 1 = best)
+    const sorted = [...row].sort((a, b) => b.todayChg - a.todayChg);
+    sorted.forEach((e, i) => { e.rank = i + 1; });
+
+    // How many stocks up today
+    const marketUpCount = row.filter(e => e.todayChg > 0).length;
+
+    const nqOpen = getFuturesOpenChg('NQ=F', today);
+    const esOpen = getFuturesOpenChg('ES=F', today);
+
+    row.forEach(e => {
+      if (e.nextChg == null) return;
+      obs.push({
+        ticker:   e.ticker,
+        date:     today,
+        todayChg: e.todayChg,
+        prevChg:  e.prevChg,
+        rank:     e.rank,
+        total:    row.length,
+        marketUpCount,
+        nextChg:  e.nextChg,
+        nqOpen,
+        esOpen,
+      });
+    });
+  }
+  _cachedObs = obs;
+  return obs;
+}
+
+// Condition definitions — each returns a label or null if not matched
+const CONDITIONS = [
+  // ── Rank ──
+  ...Array.from({length:7},(_,i) => ({
+    key: `rank_${i+1}`,
+    label: `当日排名第 <strong>${i+1}</strong> 名`,
+    fn: o => o.rank === i+1,
+  })),
+  // ── Today's change buckets ──
+  { key:'chg_bigsurge', label:'当日涨幅 <strong>&gt;+3%</strong>',    fn: o => o.todayChg >  3 },
+  { key:'chg_surge',    label:'当日涨幅 <strong>+1%~+3%</strong>',    fn: o => o.todayChg >= 1  && o.todayChg <= 3 },
+  { key:'chg_small',    label:'当日涨幅 <strong>0%~+1%</strong>',     fn: o => o.todayChg >= 0  && o.todayChg <  1 },
+  { key:'chg_smfall',   label:'当日跌幅 <strong>0%~-1%</strong>',     fn: o => o.todayChg <  0  && o.todayChg > -1 },
+  { key:'chg_fall',     label:'当日跌幅 <strong>-1%~-3%</strong>',    fn: o => o.todayChg <= -1 && o.todayChg >= -3 },
+  { key:'chg_bigfall',  label:'当日跌幅 <strong>&gt;-3%</strong>',    fn: o => o.todayChg < -3 },
+  // ── Market breadth ──
+  { key:'mkt_strong',   label:'大多数上涨（≥5只）',                   fn: o => o.marketUpCount >= 5 },
+  { key:'mkt_weak',     label:'大多数下跌（≤2只上涨）',               fn: o => o.marketUpCount <= 2 },
+  { key:'mkt_mixed',    label:'涨跌各半（3~4只上涨）',                fn: o => o.marketUpCount >= 3 && o.marketUpCount <= 4 },
+  // ── Momentum ──
+  { key:'mom_cont_up',  label:'连续两日上涨',                         fn: o => o.prevChg != null && o.prevChg > 0 && o.todayChg > 0 },
+  { key:'mom_cont_dn',  label:'连续两日下跌',                         fn: o => o.prevChg != null && o.prevChg < 0 && o.todayChg < 0 },
+  { key:'mom_rev_up',   label:'昨跌今涨（反转向上）',                 fn: o => o.prevChg != null && o.prevChg < 0 && o.todayChg > 0 },
+  { key:'mom_rev_dn',   label:'昨涨今跌（反转向下）',                 fn: o => o.prevChg != null && o.prevChg > 0 && o.todayChg < 0 },
+  // ── Rank + direction combos ──
+  { key:'top3_up',      label:'排名前3 且 当日上涨',                  fn: o => o.rank <= 3 && o.todayChg > 0 },
+  { key:'top3_dn',      label:'排名前3 且 当日下跌',                  fn: o => o.rank <= 3 && o.todayChg < 0 },
+  { key:'bot3_up',      label:'排名后3 且 当日上涨',                  fn: o => o.rank >= 5 && o.todayChg > 0 },
+  { key:'bot3_dn',      label:'排名后3 且 当日下跌',                  fn: o => o.rank >= 5 && o.todayChg < 0 },
+
+  // ── 做空形态 ──
+  // 高位反转：前日大涨后今日转跌，动能衰竭
+  { key:'short_highrev',  label:'昨日大涨(&gt;+2%) 今日转跌',           fn: o => o.prevChg != null && o.prevChg > 2 && o.todayChg < 0 },
+  // 弱反弹：大跌后反弹幅度极小，多头无力
+  { key:'short_weakbounce', label:'昨跌今涨但涨幅&lt;+0.5%（弱反弹）', fn: o => o.prevChg != null && o.prevChg < -1 && o.todayChg > 0 && o.todayChg < 0.5 },
+  // 连续三跌等价：连续两日跌 且 前日也跌（用prevChg<0 + todayChg<0模拟）
+  { key:'short_cont2dn_big', label:'连续两日下跌 且 今日跌幅&gt;2%',   fn: o => o.prevChg != null && o.prevChg < 0 && o.todayChg < -2 },
+  // 强势股转弱：排名前3但今日大跌
+  { key:'short_top3bigfall', label:'排名前3 且 今日跌幅&gt;2%',         fn: o => o.rank <= 3 && o.todayChg < -2 },
+  // 市场弱势 + 个股大跌
+  { key:'short_mkt_bigfall', label:'市场偏弱(≤2只涨) 且 今日跌&gt;2%', fn: o => o.marketUpCount <= 2 && o.todayChg < -2 },
+  // 市场弱势 + 连续两日跌
+  { key:'short_mkt_cont2dn', label:'市场偏弱(≤2只涨) 且 连续两日跌',   fn: o => o.marketUpCount <= 2 && o.prevChg != null && o.prevChg < 0 && o.todayChg < 0 },
+  // 冲高回落：今日振幅特征——前日涨今日跌且排名垫底
+  { key:'short_bot_revdn',   label:'排名后3 且 昨涨今跌',               fn: o => o.rank >= 5 && o.prevChg != null && o.prevChg > 0 && o.todayChg < 0 },
+  // 大跌后市场依然偏弱（无企稳信号）
+  { key:'short_bigfall_weakmkt', label:'今日大跌(&gt;3%) 且 市场偏弱(≤3只涨)', fn: o => o.todayChg < -3 && o.marketUpCount <= 3 },
+  // 高位连涨后今日滞涨（涨幅极小），可能见顶
+  { key:'short_topstall',    label:'排名前2 且 涨幅不足+0.3%（高位滞涨）', fn: o => o.rank <= 2 && o.todayChg >= 0 && o.todayChg < 0.3 },
+
+  // ── 期货开盘涨跌（当日开盘 vs 昨收）──
+  { key:'fut_nq_up',    label:'NQ开盘上涨（&gt;0%）',          fn: o => o.nqOpen != null && o.nqOpen > 0 },
+  { key:'fut_nq_dn',    label:'NQ开盘下跌（&lt;0%）',          fn: o => o.nqOpen != null && o.nqOpen < 0 },
+  { key:'fut_nq_str',   label:'NQ开盘强势（&gt;+0.5%）',       fn: o => o.nqOpen != null && o.nqOpen > 0.5 },
+  { key:'fut_nq_weak',  label:'NQ开盘弱势（&lt;-0.5%）',       fn: o => o.nqOpen != null && o.nqOpen < -0.5 },
+  { key:'fut_es_up',    label:'ES开盘上涨（&gt;0%）',          fn: o => o.esOpen != null && o.esOpen > 0 },
+  { key:'fut_es_dn',    label:'ES开盘下跌（&lt;0%）',          fn: o => o.esOpen != null && o.esOpen < 0 },
+  { key:'fut_both_up',  label:'NQ+ES均开盘上涨',               fn: o => o.nqOpen != null && o.nqOpen > 0 && o.esOpen != null && o.esOpen > 0 },
+  { key:'fut_both_dn',  label:'NQ+ES均开盘下跌',               fn: o => o.nqOpen != null && o.nqOpen < 0 && o.esOpen != null && o.esOpen < 0 },
+];
+
+// Two-condition combos (rank × something else, plus short-pattern × momentum)
+function buildComboConds() {
+  if (_cachedComboConds) return _cachedComboConds;
+  const rankConds  = CONDITIONS.filter(c => c.key.startsWith('rank_'));
+  const otherConds = CONDITIONS.filter(c => !c.key.startsWith('rank_') && !c.key.startsWith('top') && !c.key.startsWith('bot') && !c.key.startsWith('short_'));
+  const shortConds = CONDITIONS.filter(c => c.key.startsWith('short_'));
+  const mktConds   = CONDITIONS.filter(c => c.key.startsWith('mkt_'));
+  const combos = [];
+
+  // rank × everything
+  rankConds.forEach(r => {
+    otherConds.forEach(x => {
+      combos.push({
+        key: `${r.key}__${x.key}`,
+        label: `${r.label} &amp; ${x.label}`,
+        fn: o => r.fn(o) && x.fn(o),
+      });
+    });
+  });
+
+  // short-pattern × market breadth (adds extra context to bearish signals)
+  shortConds.forEach(s => {
+    mktConds.forEach(m => {
+      combos.push({
+        key: `${s.key}__${m.key}`,
+        label: `${s.label} &amp; ${m.label}`,
+        fn: o => s.fn(o) && m.fn(o),
+      });
+    });
+  });
+
+  _cachedComboConds = combos;
+  return combos;
+}
+
+// 预计算：ticker × condKey → 按日期排序的命中记录 [{date, nextChg}]
+// 切换日期时只需二分查找截断，无需重跑 cond.fn
+function buildRuleHits() {
+  if (_cachedRuleHits) return _cachedRuleHits;
+  const obs      = buildObservations();
+  const allConds = [...CONDITIONS, ...buildComboConds()];
+  const hits     = {}; // ticker → condKey → []
+  SYMBOLS.forEach(({ ticker }) => { hits[ticker] = {}; });
+
+  for (const o of obs) {
+    const tickerHits = hits[o.ticker];
+    if (!tickerHits) continue;
+    for (const cond of allConds) {
+      if (!cond.fn(o)) continue;
+      if (!tickerHits[cond.key]) tickerHits[cond.key] = [];
+      tickerHits[cond.key].push({ date: o.date, nextChg: o.nextChg });
+    }
+  }
+  _cachedRuleHits = hits;
+  return hits;
+}
+
+function scoreRule(matches, target, direction) {
+  const n = matches.length;
+  if (n < 3) return -Infinity;
+  const wins = matches.filter(o => o.nextChg > 0).length;
+  const losses = n - wins;
+  const longWr  = wins / n;
+  const shortWr = losses / n; // 做空胜率 = 次日下跌概率
+  const avg  = matches.reduce((s, o) => s + o.nextChg, 0) / n;
+  const shortAvg = -avg; // 做空时收益取反
+
+  if (direction === 'short') {
+    if (target === 'winrate')  return shortWr;
+    if (target === 'avgret')   return shortAvg;
+    return shortWr * 0.6 + (shortAvg / 5) * 0.4;
+  }
+  // long (default)
+  if (target === 'winrate')  return longWr;
+  if (target === 'avgret')   return avg;
+  return longWr * 0.6 + (avg / 5) * 0.4;
+}
+
+function renderMiner() {
+  const el = document.getElementById('rule-list');
+  if (!el) return;
+
+  if (!_cachedRuleHits) {
+    el.innerHTML = `<div class="no-rules" style="color:var(--muted)">⏳ 后台计算中，请稍候…</div>`;
+    return;
+  }
+
+  const dir    = document.getElementById('miner-dir')?.value || 'long';
+  const target = document.getElementById('miner-target')?.value || 'winrate';
+  const topN   = +(document.getElementById('miner-topn')?.value || 5);
+  const isShort = dir === 'short';
+
+  const obs = buildObservations();
+  if (obs.length < 5) {
+    el.innerHTML = `<div class="no-rules">数据不足，请切换到「近1个月」后重试</div>`;
+    return;
+  }
+
+  const allConds = [...CONDITIONS, ...buildComboConds()];
+  const ruleHits = buildRuleHits();
+
+  // 从预计算命中表汇总每条规则的全量统计
+  const results = [];
+  allConds.forEach(cond => {
+    // 合并所有 ticker 的命中记录
+    let upCnt = 0, dnCnt = 0, sumChg = 0, n = 0;
+    SYMBOLS.forEach(({ ticker }) => {
+      const hits = ruleHits[ticker]?.[cond.key] || [];
+      for (const h of hits) {
+        n++;
+        if (h.nextChg > 0) upCnt++; else dnCnt++;
+        sumChg += h.nextChg;
+      }
+    });
+    if (n < 3) return;
+    const longWr  = upCnt / n;
+    const shortWr = dnCnt / n;
+    const avg     = sumChg / n;
+    // scoreRule 需要 matches 数组，直接内联计算
+    const score = target === 'winrate'
+      ? (isShort ? shortWr : longWr)
+      : target === 'avgret'
+        ? (isShort ? -avg : avg)
+        : (isShort ? shortWr : longWr) * 0.6 + ((isShort ? -avg : avg) / 5) * 0.4;
+    const displayWr   = isShort ? shortWr : longWr;
+    const displayAvg  = isShort ? -avg : avg;
+    const displayWins = isShort ? dnCnt : upCnt;
+    results.push({ label: cond.label, n, displayWins, displayWr, displayAvg, score });
+  });
+
+  results.sort((a, b) => b.score - a.score);
+  const top = results.slice(0, topN);
+
+  if (!top.length) {
+    el.innerHTML = `<div class="no-rules">没有满足条件的规则（样本量不足）</div>`;
+    return;
+  }
+
+  // Header hint
+  const dirLabel = isShort
+    ? '<span style="color:#f85149;font-size:11px;margin-bottom:8px;display:block">▼ 做空信号 · 胜率 = 触发条件后次日下跌概率 · 收益 = 做空获利</span>'
+    : '<span style="color:#3fb950;font-size:11px;margin-bottom:8px;display:block">▲ 做多信号 · 胜率 = 触发条件后次日上涨概率 · 收益 = 做多获利</span>';
+
+  el.innerHTML = dirLabel;
+
+  top.forEach((r, idx) => {
+    const threshHigh = isShort ? 0.35 : 0.65; // short: 低多头胜率 = 高空头胜率
+    const threshMid  = isShort ? 0.45 : 0.55;
+    const wrColor  = r.displayWr >= 0.7 ? (isShort ? '#f85149' : '#3fb950')
+                   : r.displayWr >= 0.55 ? '#e3b341'
+                   : (isShort ? '#3fb950' : '#f85149');
+    const avgColor = r.displayAvg >= 0 ? (isShort ? '#f85149' : '#3fb950') : (isShort ? '#3fb950' : '#f85149');
+    const medal    = idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : `${idx+1}.`;
+    const rowClass = idx === 0 ? 'rule-row top1' : idx === 1 ? 'rule-row top2' : 'rule-row';
+    const winLabel = isShort ? '次日↓' : '次日↑';
+
+    const div = document.createElement('div');
+    div.className = rowClass;
+    if (isShort) div.style.borderColor = idx === 0 ? '#f85149' : idx === 1 ? 'rgba(248,81,73,0.5)' : '';
+    div.innerHTML = `
+      <div class="rule-desc">${medal} ${r.label}</div>
+      <div class="rule-wr" style="color:${wrColor}">${Math.round(r.displayWr*100)}%</div>
+      <div class="rule-avg" style="color:${avgColor}">均 ${r.displayAvg>0?'+':''}${r.displayAvg.toFixed(2)}%</div>
+      <div class="rule-n">${r.displayWins}/${r.n}次${winLabel}</div>
+    `;
+    el.appendChild(div);
+  });
+}
+
+// ── Multi-variable Linear Regression predictor ───────────────────
+// Features per day (for each stock):
+//   x0: time index (trend)
+//   x1: stock daily return
+//   x2: stock open-to-close %
+//   x3: QQQ daily return (market)
+//   x4: QQQ open-to-close % (market intraday)
+// OLS solved via normal equations on the WINDOW days, predicts next day return.
+const LR_WINDOW = 10;
+
+function olsSolve(X, y) {
+  // X: n×k matrix (array of row arrays), y: n-vector
+  // returns coefficients β = (XᵀX)⁻¹Xᵀy
+  const n = X.length, k = X[0].length;
+  // XᵀX
+  const XtX = Array.from({length:k}, () => new Array(k).fill(0));
+  const Xty = new Array(k).fill(0);
+  for (let i = 0; i < n; i++) {
+    for (let a = 0; a < k; a++) {
+      Xty[a] += X[i][a] * y[i];
+      for (let b = 0; b < k; b++) XtX[a][b] += X[i][a] * X[i][b];
+    }
+  }
+  // Gaussian elimination with partial pivoting
+  const aug = XtX.map((row, i) => [...row, Xty[i]]);
+  for (let col = 0; col < k; col++) {
+    let maxR = col;
+    for (let r = col+1; r < k; r++) if (Math.abs(aug[r][col]) > Math.abs(aug[maxR][col])) maxR = r;
+    [aug[col], aug[maxR]] = [aug[maxR], aug[col]];
+    if (Math.abs(aug[col][col]) < 1e-12) return null; // singular
+    const piv = aug[col][col];
+    for (let c = col; c <= k; c++) aug[col][c] /= piv;
+    for (let r = 0; r < k; r++) {
+      if (r === col) continue;
+      const f = aug[r][col];
+      for (let c = col; c <= k; c++) aug[r][c] -= f * aug[col][c];
+    }
+  }
+  return aug.map(row => row[k]);
+}
+
+// 从期货历史数据中获取某日的收盘涨跌幅
+function getFuturesChg(sym, date) {
+  const f = futuresHistory[sym];
+  if (!f) return null;
+  const i = f.dates.indexOf(date);
+  return i >= 0 ? f.changes[i] : null;
+}
+
+// 从期货历史数据中获取某日的开盘涨跌幅（开盘 vs 昨收）
+function getFuturesOpenChg(sym, date) {
+  const f = futuresHistory[sym];
+  if (!f) return null;
+  const i = f.dates.indexOf(date);
+  return i >= 0 ? (f.openChanges?.[i] ?? null) : null;
+}
+
+// 全量历史回归：期货当日开盘涨跌 → 个股当日收盘涨跌（系数缓存）
+function calcFutureOpenBeta(ticker) {
+  if (_cachedFutureOpenBeta[ticker]) return _cachedFutureOpenBeta[ticker];
+  const d = stockData[ticker];
+  if (!d) return { nq: 0, es: 0, nqPts: 0, esPts: 0, xNQ: [], xES: [] };
+  const xNQ = [], xES = [];
+  for (let i = 0; i < d.dates.length; i++) {
+    const date   = d.dates[i];
+    const stockR = d.changes[i];
+    if (stockR == null) continue;
+    const nqOpen = getFuturesOpenChg('NQ=F', date);
+    const esOpen = getFuturesOpenChg('ES=F', date);
+    if (nqOpen != null) xNQ.push([nqOpen, stockR]);
+    if (esOpen != null) xES.push([esOpen, stockR]);
+  }
+  const simpleLR = pts => {
+    if (pts.length < 10) return 0;
+    const n  = pts.length;
+    const mx = pts.reduce((s,[x])=>s+x,0)/n, my = pts.reduce((s,[,y])=>s+y,0)/n;
+    const num = pts.reduce((s,[x,y])=>s+(x-mx)*(y-my),0);
+    const den = pts.reduce((s,[x])=>s+(x-mx)**2,0);
+    return den > 1e-10 ? num/den : 0;
+  };
+  const result = { nq: simpleLR(xNQ), es: simpleLR(xES), nqPts: xNQ.length, esPts: xES.length, xNQ, xES };
+  _cachedFutureOpenBeta[ticker] = result;
+  return result;
+}
+
+// 用期货实时涨跌（模拟次日开盘涨跌）预测次日个股收盘
+function futuresOpenPredict(ticker) {
+  const fb    = calcFutureOpenBeta(ticker);
+  const nqNow = futuresData['NQ=F']?.intradayChg;
+  const esNow = futuresData['ES=F']?.intradayChg;
+  if (nqNow == null && esNow == null) return null;
+
+  let predicted = 0, weight = 0;
+  if (nqNow != null && fb.nqPts >= 10) { predicted += fb.nq * nqNow * fb.nqPts; weight += fb.nqPts; }
+  if (esNow != null && fb.esPts >= 10) { predicted += fb.es * esNow * fb.esPts; weight += fb.esPts; }
+  if (weight === 0) return null;
+  predicted /= weight;
+
+  const d = stockData[ticker];
+  if (!d) return null;
+  const vals = d.changes.filter(v => v != null);
+  const mean = vals.reduce((s,v)=>s+v,0)/vals.length;
+  const std  = Math.sqrt(vals.reduce((s,v)=>s+(v-mean)**2,0)/vals.length) || 1;
+  const score = predicted / std;
+
+  const dir = score > 0.15 ? 'long' : score < -0.15 ? 'short' : 'neut';
+  const nqContrib = nqNow != null ? fb.nq * nqNow : 0;
+  const esContrib = esNow != null ? fb.es * esNow : 0;
+  return { dir, score, predicted, nqBeta: fb.nq, esBeta: fb.es,
+           nqContrib, esContrib, nqNow, esNow,
+           nqWinRate: fb.nqWinRate, esWinRate: fb.esWinRate };
+}
+
+// 全量历史单变量回归：期货当天涨跌 → 个股当天收盘涨跌（系数缓存，winRate实时算）
+function calcFutureBeta(ticker) {
+  if (_cachedFutureBeta[ticker]) return _cachedFutureBeta[ticker];
+  const d = stockData[ticker];
+  if (!d) return { nq: 0, es: 0, nqPts: 0, esPts: 0, xNQ: [], xES: [] };
+  const xNQ = [], xES = [];
+  for (let i = 0; i < d.dates.length; i++) {
+    const date   = d.dates[i];
+    const stockR = d.changes[i];
+    if (stockR == null) continue;
+    const nq = getFuturesChg('NQ=F', date);
+    const es = getFuturesChg('ES=F', date);
+    if (nq != null) xNQ.push([nq, stockR]);
+    if (es != null) xES.push([es, stockR]);
+  }
+  const simpleLR = pts => {
+    if (pts.length < 10) return 0;
+    const n  = pts.length;
+    const mx = pts.reduce((s,[x])=>s+x,0)/n, my = pts.reduce((s,[,y])=>s+y,0)/n;
+    const num = pts.reduce((s,[x,y])=>s+(x-mx)*(y-my),0);
+    const den = pts.reduce((s,[x])=>s+(x-mx)**2,0);
+    return den > 1e-10 ? num/den : 0;
+  };
+  const result = { nq: simpleLR(xNQ), es: simpleLR(xES), nqPts: xNQ.length, esPts: xES.length, xNQ, xES };
+  _cachedFutureBeta[ticker] = result;
+  return result;
+}
+
+// winRate 辅助函数（实时算，依赖当前期货方向）
+function calcWinRate(pts, futDir) {
+  const filtered = pts.filter(([x]) => futDir > 0 ? x > 0 : x < 0);
+  if (filtered.length < 5) return null;
+  const wins = filtered.filter(([x, y]) => futDir > 0 ? y > 0 : y < 0).length;
+  return { rate: wins / filtered.length, n: filtered.length };
+}
+
+// 仅用期货实时涨跌预测今日个股收盘方向
+function futuresPredict(ticker) {
+  const fb    = calcFutureBeta(ticker);
+  const nqNow = futuresData['NQ=F']?.intradayChg;
+  const esNow = futuresData['ES=F']?.intradayChg;
+  if (nqNow == null && esNow == null) return null;
+
+  let predicted = 0, weight = 0;
+  if (nqNow != null && fb.nqPts >= 10) { predicted += fb.nq * nqNow * fb.nqPts; weight += fb.nqPts; }
+  if (esNow != null && fb.esPts >= 10) { predicted += fb.es * esNow * fb.esPts; weight += fb.esPts; }
+  if (weight === 0) return null;
+  predicted /= weight;
+
+  const d = stockData[ticker];
+  if (!d) return null;
+  const vals = d.changes.filter(v => v != null);
+  const mean = vals.reduce((s,v)=>s+v,0)/vals.length;
+  const std  = Math.sqrt(vals.reduce((s,v)=>s+(v-mean)**2,0)/vals.length) || 1;
+  const score = predicted / std;
+
+  const dir = score > 0.15 ? 'long' : score < -0.15 ? 'short' : 'neut';
+  const nqContrib = nqNow != null ? fb.nq * nqNow : 0;
+  const esContrib = esNow != null ? fb.es * esNow : 0;
+  return { dir, score, predicted, nqBeta: fb.nq, esBeta: fb.es, nqContrib, esContrib,
+           nqNow, esNow,
+           nqWinRate: nqNow != null ? calcWinRate(fb.xNQ, nqNow) : null,
+           esWinRate: esNow != null ? calcWinRate(fb.xES, esNow) : null };
+}
+
+// lrPredict 保留给 Model PK 回测（历史模式，不用期货）
+function lrPredict(ticker, beforeDate, useRealtime = false) {
+  const d   = stockData[ticker];
+  const qqq = stockData['QQQ'];
+  if (!d || !qqq) return null;
+
+  const ti = d.dates.indexOf(beforeDate);
+  if (ti < LR_WINDOW) return null;
+
+  const X = [], y = [];
+  for (let i = ti - LR_WINDOW; i < ti; i++) {
+    const date  = d.dates[i];
+    const ret   = d.changes[i];
+    const otc   = d.openToClose?.[i];
+    const qi    = qqq.dates.indexOf(date);
+    const qRet  = qi >= 0 ? qqq.changes[qi]      : null;
+    const qOtc  = qi >= 0 ? qqq.openToClose?.[qi] : null;
+    const next  = d.changes[i + 1];
+    if (ret == null || otc == null || qRet == null || qOtc == null || next == null) continue;
+    const t = i - (ti - LR_WINDOW);
+    X.push([1, t, ret, otc, qRet, qOtc]);
+    y.push(next);
+  }
+  if (X.length < 5) return null;
+
+  const beta = olsSolve(X, y);
+  if (!beta) return null;
+
+  const todayRet  = d.changes[ti];
+  const todayOtc  = d.openToClose?.[ti];
+  const qi        = qqq.dates.indexOf(beforeDate);
+  const qTodayRet = qi >= 0 ? qqq.changes[qi]      : null;
+  const qTodayOtc = qi >= 0 ? qqq.openToClose?.[qi] : null;
+  if (todayRet == null || todayOtc == null || qTodayRet == null || qTodayOtc == null) return null;
+
+  const predicted = beta[0] + beta[1]*LR_WINDOW + beta[2]*todayRet + beta[3]*todayOtc + beta[4]*qTodayRet + beta[5]*qTodayOtc;
+  const mean  = y.reduce((s,v)=>s+v,0)/y.length;
+  const std   = Math.sqrt(y.reduce((s,v)=>s+(v-mean)**2,0)/y.length) || 1;
+  const score = predicted / std;
+
+  const dir = score > 0.2 ? 'long' : score < -0.2 ? 'short' : 'neut';
+  return { dir, score, predicted, beta, futContrib: 0, nqContrib: 0, esContrib: 0, useRealtime };
+}
+
+// ── Model PK ─────────────────────────────────────────────────────
+function runModelPK() {
+  if (_cachedModelPK) return _cachedModelPK;
+  const allObs = buildObservations();
+  const allDatesSet = new Set();
+  SYMBOLS.forEach(({ ticker }) => {
+    const d = stockData[ticker];
+    if (d) d.dates.forEach((dt, i) => { if (d.changes[i] != null) allDatesSet.add(dt); });
+  });
+  const allDates = [...allDatesSet].sort();
+  if (allDates.length < LR_WINDOW + 5) return null;
+
+  const allConds = [...CONDITIONS, ...buildComboConds()];
+  const ruleHits = buildRuleHits();
+
+  // per-day results: { date, stocks: [{ticker, ruleDir, lrDir, actual}] }
+  const days = [];
+
+  for (let di = LR_WINDOW; di < allDates.length - 1; di++) {
+    const today    = allDates[di];
+    const tomorrow = allDates[di + 1];
+
+    // build todayRow (same as renderSignalForDate)
+    const todayRow = SYMBOLS.map(({ ticker, color, name }) => {
+      const d = stockData[ticker];
+      if (!d) return null;
+      const ti = d.dates.indexOf(today);
+      if (ti < 0 || d.changes[ti] == null) return null;
+      const pi = ti > 0 ? ti - 1 : -1;
+      return { ticker, color, name,
+        todayChg: d.changes[ti],
+        prevChg:  pi >= 0 ? d.changes[pi] : null };
+    }).filter(Boolean);
+    if (!todayRow.length) continue;
+
+    const sorted = [...todayRow].sort((a, b) => b.todayChg - a.todayChg);
+    sorted.forEach((e, i) => { e.rank = i + 1; });
+    const marketUpCount = todayRow.filter(e => e.todayChg > 0).length;
+    todayRow.forEach(e => { e.marketUpCount = marketUpCount; });
+
+    const stockResults = todayRow.map(stock => {
+      // rule engine — use precomputed ruleHits (bisect by date) instead of re-filtering allObs
+      const hitRules = [];
+      allConds.forEach(cond => {
+        if (!cond.fn(stock)) return;
+        const allHits = ruleHits[stock.ticker]?.[cond.key] || [];
+        // bisect: keep only hits with date < today
+        let hi = allHits.length;
+        let lo = 0;
+        while (lo < hi) { const mid = (lo + hi) >>> 1; allHits[mid].date < today ? lo = mid + 1 : hi = mid; }
+        const n = lo;
+        if (n < 3) return;
+        let wins = 0;
+        for (let i = 0; i < n; i++) { if (allHits[i].nextChg > 0) wins++; }
+        const wr = wins / n;
+        hitRules.push({ wr, n });
+      });
+      let wSum = 0, wTot = 0;
+      hitRules.forEach(r => { wSum += (r.wr - 0.5) * r.n; wTot += r.n; });
+      const ruleScore = wTot > 0 ? wSum / wTot : 0;
+      const ruleDir   = ruleScore > 0.05 ? 'long' : ruleScore < -0.05 ? 'short' : 'neut';
+
+      // LR signal：预测今日收盘
+      const lr = lrPredict(stock.ticker, today);
+      const lrDir = lr ? lr.dir : 'neut';
+
+      // 期货开盘预测：用当日期货开盘涨跌 × 历史系数预测当日个股收盘
+      const fb       = calcFutureOpenBeta(stock.ticker);
+      const nqOpen   = getFuturesOpenChg('NQ=F', today);
+      const esOpen   = getFuturesOpenChg('ES=F', today);
+      let futPredicted = 0, futWeight = 0;
+      if (nqOpen != null && fb.nqPts >= 10) { futPredicted += fb.nq * nqOpen * fb.nqPts; futWeight += fb.nqPts; }
+      if (esOpen != null && fb.esPts >= 10) { futPredicted += fb.es * esOpen * fb.esPts; futWeight += fb.esPts; }
+      let futDir = 'neut';
+      if (futWeight > 0) {
+        futPredicted /= futWeight;
+        const d2 = stockData[stock.ticker];
+        const vals = d2 ? d2.changes.filter(v => v != null) : [];
+        const mean = vals.length ? vals.reduce((s,v)=>s+v,0)/vals.length : 0;
+        const std  = vals.length ? Math.sqrt(vals.reduce((s,v)=>s+(v-mean)**2,0)/vals.length) || 1 : 1;
+        const futScore = futPredicted / std;
+        futDir = futScore > 0.15 ? 'long' : futScore < -0.15 ? 'short' : 'neut';
+      }
+
+      const d = stockData[stock.ticker];
+      const ni2 = d ? d.dates.indexOf(tomorrow) : -1;
+      const actualNext  = ni2 >= 0 && d.changes[ni2] != null ? d.changes[ni2] : null;
+      const ti2 = d ? d.dates.indexOf(today) : -1;
+      const actualToday = ti2 >= 0 && d.changes[ti2] != null ? d.changes[ti2] : null;
+
+      return { ticker: stock.ticker, color: stock.color, ruleDir, lrDir, futDir, actualNext, actualToday };
+    });
+
+    days.push({ date: today, stocks: stockResults });
+  }
+
+  // aggregate stats
+  let ruleHit = 0, ruleTot = 0, lrHit = 0, lrTot = 0, futHit = 0, futTot = 0;
+  days.forEach(({ stocks }) => {
+    stocks.forEach(s => {
+      if (s.ruleDir !== 'neut' && s.actualNext !== null) {
+        ruleTot++;
+        if (s.ruleDir === 'long' ? s.actualNext > 0 : s.actualNext < 0) ruleHit++;
+      }
+      if (s.lrDir !== 'neut' && s.actualToday !== null) {
+        lrTot++;
+        if (s.lrDir === 'long' ? s.actualToday > 0 : s.actualToday < 0) lrHit++;
+      }
+      if (s.futDir !== 'neut' && s.actualToday !== null) {
+        futTot++;
+        if (s.futDir === 'long' ? s.actualToday > 0 : s.actualToday < 0) futHit++;
+      }
+    });
+  });
+
+  _cachedModelPK = {
+    rule: { hit: ruleHit, tot: ruleTot, rate: ruleTot > 0 ? ruleHit / ruleTot : 0 },
+    lr:   { hit: lrHit,  tot: lrTot,  rate: lrTot  > 0 ? lrHit  / lrTot  : 0 },
+    fut:  { hit: futHit,  tot: futTot,  rate: futTot  > 0 ? futHit  / futTot  : 0 },
+    days,
+  };
+  return _cachedModelPK;
+}
+
+function renderModelPK() {
+  const scoreEl = document.getElementById('pk-scoreboard');
+  const tableEl = document.getElementById('pk-history-table');
+  if (!scoreEl || !tableEl) return;
+
+  // Worker 尚未返回时，显示计算中
+  if (!_cachedModelPK && !_cachedRuleHits) {
+    scoreEl.innerHTML = `<div style="grid-column:1/-1;color:var(--muted);font-size:12px">⏳ 后台计算中…</div>`;
+    tableEl.innerHTML = '';
+    return;
+  }
+
+  const pk = runModelPK();
+  if (!pk) {
+    scoreEl.innerHTML = `<div style="grid-column:1/-1;color:var(--muted);font-size:12px">数据不足</div>`;
+    return;
+  }
+
+  const rates   = [pk.rule.rate, pk.lr.rate, pk.fut.rate];
+  const maxRate = Math.max(...rates);
+  const fmtCard = (name, stat, color, isWinner) => `
+    <div class="pk-card ${isWinner ? 'winner' : ''}">
+      ${isWinner ? '<div class="pk-crown">🏆</div>' : ''}
+      <div class="pk-name">${name}</div>
+      <div class="pk-rate" style="color:${color}">${Math.round(stat.rate*100)}%</div>
+      <div class="pk-detail">${stat.hit}/${stat.tot} 次命中</div>
+    </div>`;
+
+  const ruleC = pk.rule.rate >= 0.6 ? '#3fb950' : pk.rule.rate >= 0.5 ? '#e3b341' : '#f85149';
+  const lrC   = pk.lr.rate   >= 0.6 ? '#58a6ff' : pk.lr.rate   >= 0.5 ? '#e3b341' : '#f85149';
+  const futC  = pk.fut.rate  >= 0.6 ? '#d2a8ff' : pk.fut.rate  >= 0.5 ? '#e3b341' : '#f85149';
+
+  scoreEl.style.gridTemplateColumns = '1fr 1fr 1fr';
+  scoreEl.innerHTML =
+    fmtCard('规则引擎（次日）',    pk.rule, ruleC, pk.rule.rate === maxRate) +
+    fmtCard('LR回归（当日）',      pk.lr,   lrC,   pk.lr.rate   === maxRate) +
+    fmtCard('期货开盘（当日）',    pk.fut,  futC,  pk.fut.rate  === maxRate);
+
+  // history table — last 30 days
+  const recent = pk.days.slice(-30).reverse();
+  tableEl.innerHTML = `
+    <thead>
+      <tr>
+        <th>日期</th><th>标的</th>
+        <th style="color:#8b949e">规则引擎</th>
+        <th style="color:#58a6ff">LR回归</th>
+        <th style="color:#d2a8ff">期货开盘</th>
+      </tr>
+    </thead>
+    <tbody id="pk-tbody"></tbody>
+  `;
+  const tbody = tableEl.querySelector('tbody');
+
+  recent.forEach(({ date, stocks }) => {
+    stocks.forEach((s, i) => {
+      const tr = document.createElement('tr');
+      const ruleActual = s.actualNext;
+      const todayActual = s.actualToday;
+
+      const mkColor = v => v == null ? '#8b949e' : v >= 0 ? '#3fb950' : '#f85149';
+      const mkBadge = (dir, actual, cls1, cls2, suffix) => {
+        const word = dir === 'long' ? '▲做多' : dir === 'short' ? '▼做空' : '—观望';
+        const hit  = dir === 'neut' || actual === null ? null : (dir === 'long' ? actual > 0 : actual < 0);
+        const cls  = dir === 'neut' ? 'neut' : hit ? cls1 : cls2;
+        const actStr = actual !== null ? `<span style="color:${mkColor(actual)};font-size:10px;margin-left:3px">${actual>0?'+':''}${actual.toFixed(2)}%${suffix}</span>` : '';
+        return `<span class="pk-badge ${cls}">${word}</span>${actStr}`;
+      };
+
+      tr.innerHTML = `
+        <td style="color:var(--muted);white-space:nowrap">${i===0 ? fmtDate(date) : ''}</td>
+        <td style="color:${s.color};font-weight:700">${s.ticker}</td>
+        <td>${mkBadge(s.ruleDir, ruleActual,  'hit-rule', 'miss-rule', '次日')}</td>
+        <td>${mkBadge(s.lrDir,   todayActual, 'hit-lr',   'miss-lr',   '当日')}</td>
+        <td>${mkBadge(s.futDir,  todayActual, 'hit-lr',   'miss-lr',   '当日')}</td>
+      `;
+      tbody.appendChild(tr);
+    });
+  });
+}
+
+// ── Rank Winrate Analysis ────────────────────────────────────────
+// For each trading day, rank all 7 stocks by that day's change (rank1=best).
+// Then look at the NEXT day's change for that stock.
+// Aggregate: per rank slot → winrate (next day > 0) + avg next-day change.
+function buildRankStats() {
+  // Collect all dates that appear in ALL available stocks
+  const allDates = new Set();
+  SYMBOLS.forEach(({ ticker }) => {
+    const d = stockData[ticker];
+    if (!d) return;
+    d.dates.forEach((dt, i) => { if (d.changes[i] != null) allDates.add(dt); });
+  });
+
+  const sortedDates = [...allDates].sort();
+
+  // rankStats[rank] = { wins, total, nextChanges[] }  rank: 0-indexed (0=best)
+  const rankStats = Array.from({ length: 7 }, () => ({ wins: 0, total: 0, nextChanges: [] }));
+
+  // detailRows: per trading day, the ranked list
+  const detailRows = [];
+
+  for (let di = 0; di < sortedDates.length - 1; di++) {
+    const today = sortedDates[di];
+    const tomorrow = sortedDates[di + 1];
+
+    // Get today's change for each stock
+    const entries = SYMBOLS.map(({ ticker, name, color }) => {
+      const d = stockData[ticker];
+      if (!d) return null;
+      const todayIdx = d.dates.indexOf(today);
+      const tomIdx   = d.dates.indexOf(tomorrow);
+      if (todayIdx < 0 || d.changes[todayIdx] == null) return null;
+      return {
+        ticker, name, color,
+        todayChg: d.changes[todayIdx],
+        nextChg:  (tomIdx >= 0 && d.changes[tomIdx] != null) ? d.changes[tomIdx] : null,
+      };
+    }).filter(Boolean);
+
+    if (entries.length < 2) continue;
+
+    // Sort descending by today's change → rank 1 = best performer
+    entries.sort((a, b) => b.todayChg - a.todayChg);
+
+    const row = { date: today, entries: [] };
+    entries.forEach((e, rankIdx) => {
+      row.entries.push({ ...e, rank: rankIdx + 1 });
+      if (e.nextChg !== null && rankIdx < rankStats.length) {
+        rankStats[rankIdx].total++;
+        if (e.nextChg > 0) rankStats[rankIdx].wins++;
+        rankStats[rankIdx].nextChanges.push(e.nextChg);
+      }
+    });
+    detailRows.push(row);
+  }
+
+  return { rankStats, detailRows };
+}
+
+function renderRankWinrate() {
+  const cardsEl = document.getElementById('rank-cards');
+  const tableEl = document.getElementById('rank-detail');
+  if (!cardsEl || !tableEl) return;
+
+  const { rankStats, detailRows } = buildRankStats();
+
+  if (detailRows.length === 0) {
+    cardsEl.innerHTML = `<div style="grid-column:1/-1;color:var(--muted);font-size:12px">数据不足，至少需要2个交易日</div>`;
+    return;
+  }
+
+  // Find best / worst winrate rank
+  const validStats = rankStats.filter(s => s.total > 0);
+  const maxWR = validStats.length ? Math.max(...validStats.map(s => s.wins / s.total)) : 0;
+  const minWR = validStats.length ? Math.min(...validStats.map(s => s.wins / s.total)) : 0;
+
+  // ── Rank cards ──
+  cardsEl.innerHTML = '';
+  rankStats.forEach((s, i) => {
+    const wr = s.total > 0 ? s.wins / s.total : null;
+    const avgNext = s.nextChanges.length
+      ? s.nextChanges.reduce((a,b)=>a+b,0) / s.nextChanges.length
+      : null;
+    const isBest  = wr !== null && wr === maxWR && s.total > 0;
+    const isWorst = wr !== null && wr === minWR && s.total > 0 && minWR !== maxWR;
+
+    const pctColor = wr === null ? '#8b949e' : wr >= 0.6 ? '#3fb950' : wr <= 0.4 ? '#f85149' : '#e6edf3';
+    const avgColor = avgNext === null ? '#8b949e' : avgNext >= 0 ? '#3fb950' : '#f85149';
+
+    const card = document.createElement('div');
+    card.className = 'rank-card' + (isBest ? ' best' : isWorst ? ' worst' : '');
+    card.innerHTML = `
+      <div class="rk-num">第 ${i+1} 名</div>
+      <div class="rk-pct" style="color:${pctColor}">
+        ${wr !== null ? Math.round(wr*100) + '%' : '—'}
+      </div>
+      <div class="rk-frac">${s.wins}/${s.total} 次↑</div>
+      <div class="rk-avg" style="color:${avgColor}">
+        次日均 ${avgNext !== null ? (avgNext>0?'+':'')+avgNext.toFixed(2)+'%' : '—'}
+      </div>
+    `;
+    cardsEl.appendChild(card);
+  });
+
+  // ── Detail table ──
+  // Header
+  const maxCols = Math.max(...detailRows.map(r => r.entries.length));
+  const rankHeaders = Array.from({length: maxCols}, (_,i) => `<th>第${i+1}名</th>`).join('');
+  tableEl.innerHTML = `
+    <thead>
+      <tr><th>日期</th>${rankHeaders}</tr>
+    </thead>
+    <tbody id="rank-detail-body"></tbody>
+  `;
+
+  const tbody = tableEl.querySelector('tbody');
+  detailRows.forEach(({ date, entries }) => {
+    const tr = document.createElement('tr');
+    const nextDay = entries[0]?.nextChg !== null ? '有次日' : '';
+    let html = `<td style="color:var(--muted);white-space:nowrap">${fmtDate(date)}</td>`;
+
+    entries.forEach(e => {
+      const todayColor = e.todayChg >= 0 ? '#3fb950' : '#f85149';
+      const nextColor  = e.nextChg === null ? '#8b949e' : e.nextChg >= 0 ? '#3fb950' : '#f85149';
+      const nextStr    = e.nextChg !== null
+        ? `<span style="color:${nextColor}">${e.nextChg>0?'+':''}${e.nextChg.toFixed(2)}%</span>`
+        : `<span style="color:#484f58">—</span>`;
+      html += `
+        <td>
+          <span style="color:${e.color};font-weight:700">${e.ticker}</span>
+          <span style="color:${todayColor};margin-left:3px">${e.todayChg>0?'+':''}${e.todayChg.toFixed(2)}%</span>
+          <br><span style="font-size:10px;color:var(--muted)">次日→</span> ${nextStr}
+        </td>`;
+    });
+
+    tr.innerHTML = html;
+    tbody.appendChild(tr);
+  });
+}
+
+// ── Helpers ──────────────────────────────────────────────────────
+function showError(msg) {
+  document.getElementById('error-zone').innerHTML = `<div class="error-bar">⚠️ ${msg}</div>`;
+}
+
+function clearError() {
+  document.getElementById('error-zone').innerHTML = '';
+}
+
+function setLoading(v) {
+  document.getElementById('refresh-btn').classList.toggle('loading', v);
+}
+
+// ── Web Worker (inline Blob) ──────────────────────────────────────
+const WORKER_SRC = `
+const LR_WINDOW = 10;
+let _sd = {};         // stockData
+let _fh = {};         // futuresHistory
+let _sym = [];        // SYMBOLS array
+let _cachedObs = null;
+let _cachedComboConds = null;
+let _cachedRuleHits = null;
+let _cachedFutureOpenBeta = {};
+let _cachedFutureBeta = {};
+let _cachedModelPK = null;
+
+function getFuturesChg(sym, date) {
+  const f = _fh[sym]; if (!f) return null;
+  const i = f.dates.indexOf(date);
+  return i >= 0 ? f.changes[i] : null;
+}
+function getFuturesOpenChg(sym, date) {
+  const f = _fh[sym]; if (!f) return null;
+  const i = f.dates.indexOf(date);
+  return i >= 0 ? (f.openChanges?.[i] ?? null) : null;
+}
+
+function buildObservations() {
+  if (_cachedObs) return _cachedObs;
+  const allDatesSet = new Set();
+  _sym.forEach(({ ticker }) => {
+    const d = _sd[ticker];
+    if (d) d.dates.forEach((dt, i) => { if (d.changes[i] != null) allDatesSet.add(dt); });
+  });
+  const allDates = [...allDatesSet].sort();
+  const obs = [];
+  for (let di = 0; di < allDates.length - 1; di++) {
+    const today    = allDates[di];
+    const tomorrow = allDates[di + 1];
+    const row = _sym.map(({ ticker }) => {
+      const d = _sd[ticker]; if (!d) return null;
+      const ti = d.dates.indexOf(today);
+      const ni = d.dates.indexOf(tomorrow);
+      const pi = ti > 0 ? ti - 1 : -1;
+      return {
+        ticker,
+        todayChg: ti >= 0 && d.changes[ti] != null ? d.changes[ti] : null,
+        prevChg:  pi >= 0 && d.changes[pi] != null ? d.changes[pi] : null,
+        nextChg:  ni >= 0 && d.changes[ni] != null ? d.changes[ni] : null,
+      };
+    }).filter(e => e && e.todayChg != null);
+    if (row.length < 4) continue;
+    const sorted = [...row].sort((a, b) => b.todayChg - a.todayChg);
+    sorted.forEach((e, i) => { e.rank = i + 1; });
+    const marketUpCount = row.filter(e => e.todayChg > 0).length;
+    const nqOpen = getFuturesOpenChg('NQ=F', today);
+    const esOpen = getFuturesOpenChg('ES=F', today);
+    row.forEach(e => {
+      if (e.nextChg == null) return;
+      obs.push({ ticker: e.ticker, date: today, todayChg: e.todayChg, prevChg: e.prevChg,
+                 rank: e.rank, total: row.length, marketUpCount, nextChg: e.nextChg,
+                 nqOpen, esOpen });
+    });
+  }
+  _cachedObs = obs;
+  return obs;
+}
+
+const CONDITIONS = [
+  ...Array.from({length:7},(_,i)=>({ key:'rank_'+(i+1), fn: o => o.rank===i+1 })),
+  { key:'chg_bigsurge', fn: o => o.todayChg >  3 },
+  { key:'chg_surge',    fn: o => o.todayChg >= 1  && o.todayChg <= 3 },
+  { key:'chg_small',    fn: o => o.todayChg >= 0  && o.todayChg <  1 },
+  { key:'chg_smfall',   fn: o => o.todayChg <  0  && o.todayChg > -1 },
+  { key:'chg_fall',     fn: o => o.todayChg <= -1 && o.todayChg >= -3 },
+  { key:'chg_bigfall',  fn: o => o.todayChg < -3 },
+  { key:'mkt_strong',   fn: o => o.marketUpCount >= 5 },
+  { key:'mkt_weak',     fn: o => o.marketUpCount <= 2 },
+  { key:'mkt_mixed',    fn: o => o.marketUpCount >= 3 && o.marketUpCount <= 4 },
+  { key:'mom_cont_up',  fn: o => o.prevChg != null && o.prevChg > 0 && o.todayChg > 0 },
+  { key:'mom_cont_dn',  fn: o => o.prevChg != null && o.prevChg < 0 && o.todayChg < 0 },
+  { key:'mom_rev_up',   fn: o => o.prevChg != null && o.prevChg < 0 && o.todayChg > 0 },
+  { key:'mom_rev_dn',   fn: o => o.prevChg != null && o.prevChg > 0 && o.todayChg < 0 },
+  { key:'top3_up',      fn: o => o.rank <= 3 && o.todayChg > 0 },
+  { key:'top3_dn',      fn: o => o.rank <= 3 && o.todayChg < 0 },
+  { key:'bot3_up',      fn: o => o.rank >= 5 && o.todayChg > 0 },
+  { key:'bot3_dn',      fn: o => o.rank >= 5 && o.todayChg < 0 },
+  { key:'short_highrev',        fn: o => o.prevChg != null && o.prevChg > 2 && o.todayChg < 0 },
+  { key:'short_weakbounce',     fn: o => o.prevChg != null && o.prevChg < -1 && o.todayChg > 0 && o.todayChg < 0.5 },
+  { key:'short_cont2dn_big',    fn: o => o.prevChg != null && o.prevChg < 0 && o.todayChg < -2 },
+  { key:'short_top3bigfall',    fn: o => o.rank <= 3 && o.todayChg < -2 },
+  { key:'short_mkt_bigfall',    fn: o => o.marketUpCount <= 2 && o.todayChg < -2 },
+  { key:'short_mkt_cont2dn',    fn: o => o.marketUpCount <= 2 && o.prevChg != null && o.prevChg < 0 && o.todayChg < 0 },
+  { key:'short_bot_revdn',      fn: o => o.rank >= 5 && o.prevChg != null && o.prevChg > 0 && o.todayChg < 0 },
+  { key:'short_bigfall_weakmkt',fn: o => o.todayChg < -3 && o.marketUpCount <= 3 },
+  { key:'short_topstall',       fn: o => o.rank <= 2 && o.todayChg >= 0 && o.todayChg < 0.3 },
+  { key:'fut_nq_up',   fn: o => o.nqOpen != null && o.nqOpen > 0 },
+  { key:'fut_nq_dn',   fn: o => o.nqOpen != null && o.nqOpen < 0 },
+  { key:'fut_nq_str',  fn: o => o.nqOpen != null && o.nqOpen > 0.5 },
+  { key:'fut_nq_weak', fn: o => o.nqOpen != null && o.nqOpen < -0.5 },
+  { key:'fut_es_up',   fn: o => o.esOpen != null && o.esOpen > 0 },
+  { key:'fut_es_dn',   fn: o => o.esOpen != null && o.esOpen < 0 },
+  { key:'fut_both_up', fn: o => o.nqOpen != null && o.nqOpen > 0 && o.esOpen != null && o.esOpen > 0 },
+  { key:'fut_both_dn', fn: o => o.nqOpen != null && o.nqOpen < 0 && o.esOpen != null && o.esOpen < 0 },
+];
+
+function buildComboConds() {
+  if (_cachedComboConds) return _cachedComboConds;
+  const rankConds  = CONDITIONS.filter(c => c.key.startsWith('rank_'));
+  const otherConds = CONDITIONS.filter(c => !c.key.startsWith('rank_') && !c.key.startsWith('top') && !c.key.startsWith('bot') && !c.key.startsWith('short_'));
+  const shortConds = CONDITIONS.filter(c => c.key.startsWith('short_'));
+  const mktConds   = CONDITIONS.filter(c => c.key.startsWith('mkt_'));
+  const combos = [];
+  rankConds.forEach(r => { otherConds.forEach(x => { combos.push({ key: r.key+'__'+x.key, fn: o => r.fn(o) && x.fn(o) }); }); });
+  shortConds.forEach(s => { mktConds.forEach(m => { combos.push({ key: s.key+'__'+m.key, fn: o => s.fn(o) && m.fn(o) }); }); });
+  _cachedComboConds = combos;
+  return combos;
+}
+
+function buildRuleHits() {
+  if (_cachedRuleHits) return _cachedRuleHits;
+  const obs      = buildObservations();
+  const allConds = [...CONDITIONS, ...buildComboConds()];
+  const hits = {};
+  _sym.forEach(({ ticker }) => { hits[ticker] = {}; });
+  for (const o of obs) {
+    const tickerHits = hits[o.ticker]; if (!tickerHits) continue;
+    for (const cond of allConds) {
+      if (!cond.fn(o)) continue;
+      if (!tickerHits[cond.key]) tickerHits[cond.key] = [];
+      tickerHits[cond.key].push({ date: o.date, nextChg: o.nextChg });
+    }
+  }
+  _cachedRuleHits = hits;
+  return hits;
+}
+
+function olsSolve(X, y) {
+  const n = X.length, k = X[0].length;
+  const XtX = Array.from({length:k}, () => new Array(k).fill(0));
+  const Xty = new Array(k).fill(0);
+  for (let i = 0; i < n; i++) {
+    for (let a = 0; a < k; a++) {
+      Xty[a] += X[i][a] * y[i];
+      for (let b = 0; b < k; b++) XtX[a][b] += X[i][a] * X[i][b];
+    }
+  }
+  const aug = XtX.map((row, i) => [...row, Xty[i]]);
+  for (let col = 0; col < k; col++) {
+    let maxR = col;
+    for (let r = col+1; r < k; r++) if (Math.abs(aug[r][col]) > Math.abs(aug[maxR][col])) maxR = r;
+    [aug[col], aug[maxR]] = [aug[maxR], aug[col]];
+    if (Math.abs(aug[col][col]) < 1e-12) return null;
+    const piv = aug[col][col];
+    for (let c = col; c <= k; c++) aug[col][c] /= piv;
+    for (let r = 0; r < k; r++) {
+      if (r === col) continue;
+      const f = aug[r][col];
+      for (let c = col; c <= k; c++) aug[r][c] -= f * aug[col][c];
+    }
+  }
+  return aug.map(row => row[k]);
+}
+
+function lrPredict(ticker, beforeDate) {
+  const d   = _sd[ticker];
+  const qqq = _sd['QQQ'];
+  if (!d || !qqq) return null;
+  const ti = d.dates.indexOf(beforeDate);
+  if (ti < LR_WINDOW) return null;
+  const X = [], y = [];
+  for (let i = ti - LR_WINDOW; i < ti; i++) {
+    const date = d.dates[i];
+    const ret  = d.changes[i], otc = d.openToClose?.[i];
+    const qi   = qqq.dates.indexOf(date);
+    const qRet = qi >= 0 ? qqq.changes[qi] : null, qOtc = qi >= 0 ? qqq.openToClose?.[qi] : null;
+    const next = d.changes[i + 1];
+    if (ret == null || otc == null || qRet == null || qOtc == null || next == null) continue;
+    X.push([1, i-(ti-LR_WINDOW), ret, otc, qRet, qOtc]); y.push(next);
+  }
+  if (X.length < 5) return null;
+  const beta = olsSolve(X, y); if (!beta) return null;
+  const todayRet = d.changes[ti], todayOtc = d.openToClose?.[ti];
+  const qi = qqq.dates.indexOf(beforeDate);
+  const qTodayRet = qi >= 0 ? qqq.changes[qi] : null, qTodayOtc = qi >= 0 ? qqq.openToClose?.[qi] : null;
+  if (todayRet == null || todayOtc == null || qTodayRet == null || qTodayOtc == null) return null;
+  const predicted = beta[0]+beta[1]*LR_WINDOW+beta[2]*todayRet+beta[3]*todayOtc+beta[4]*qTodayRet+beta[5]*qTodayOtc;
+  const mean = y.reduce((s,v)=>s+v,0)/y.length;
+  const std  = Math.sqrt(y.reduce((s,v)=>s+(v-mean)**2,0)/y.length) || 1;
+  const score = predicted / std;
+  return { dir: score>0.2?'long':score<-0.2?'short':'neut', score };
+}
+
+function calcFutureOpenBeta(ticker) {
+  if (_cachedFutureOpenBeta[ticker]) return _cachedFutureOpenBeta[ticker];
+  const d = _sd[ticker];
+  if (!d) return { nq:0, es:0, nqPts:0, esPts:0 };
+  const xNQ = [], xES = [];
+  for (let i = 0; i < d.dates.length; i++) {
+    const stockR = d.changes[i]; if (stockR == null) continue;
+    const nqOpen = getFuturesOpenChg('NQ=F', d.dates[i]);
+    const esOpen = getFuturesOpenChg('ES=F', d.dates[i]);
+    if (nqOpen != null) xNQ.push([nqOpen, stockR]);
+    if (esOpen != null) xES.push([esOpen, stockR]);
+  }
+  const simpleLR = pts => {
+    if (pts.length < 10) return 0;
+    const n=pts.length, mx=pts.reduce((s,[x])=>s+x,0)/n, my=pts.reduce((s,[,y])=>s+y,0)/n;
+    const num=pts.reduce((s,[x,y])=>s+(x-mx)*(y-my),0), den=pts.reduce((s,[x])=>s+(x-mx)**2,0);
+    return den > 1e-10 ? num/den : 0;
+  };
+  const result = { nq:simpleLR(xNQ), es:simpleLR(xES), nqPts:xNQ.length, esPts:xES.length };
+  _cachedFutureOpenBeta[ticker] = result;
+  return result;
+}
+
+function runModelPK() {
+  if (_cachedModelPK) return _cachedModelPK;
+  const allObs  = buildObservations();
+  const ruleHits = buildRuleHits();
+  const allConds = [...CONDITIONS, ...buildComboConds()];
+  const allDatesSet = new Set();
+  _sym.forEach(({ ticker }) => {
+    const d = _sd[ticker];
+    if (d) d.dates.forEach((dt, i) => { if (d.changes[i] != null) allDatesSet.add(dt); });
+  });
+  const allDates = [...allDatesSet].sort();
+  if (allDates.length < LR_WINDOW + 5) return null;
+
+  const days = [];
+  for (let di = LR_WINDOW; di < allDates.length - 1; di++) {
+    const today    = allDates[di];
+    const tomorrow = allDates[di + 1];
+    const todayRow = _sym.map(({ ticker, color }) => {
+      const d = _sd[ticker]; if (!d) return null;
+      const ti = d.dates.indexOf(today);
+      if (ti < 0 || d.changes[ti] == null) return null;
+      const pi = ti > 0 ? ti - 1 : -1;
+      return { ticker, color, todayChg: d.changes[ti], prevChg: pi >= 0 ? d.changes[pi] : null };
+    }).filter(Boolean);
+    if (!todayRow.length) continue;
+    const sorted = [...todayRow].sort((a,b)=>b.todayChg-a.todayChg);
+    sorted.forEach((e,i)=>{ e.rank=i+1; });
+    const marketUpCount = todayRow.filter(e=>e.todayChg>0).length;
+    todayRow.forEach(e=>{ e.marketUpCount=marketUpCount; });
+
+    const nqOpen = getFuturesOpenChg('NQ=F', today);
+    const esOpen = getFuturesOpenChg('ES=F', today);
+
+    const stockResults = todayRow.map(stock => {
+      const hitRules = [];
+      allConds.forEach(cond => {
+        if (!cond.fn(stock)) return;
+        const allHits = ruleHits[stock.ticker]?.[cond.key] || [];
+        let hi = allHits.length, lo = 0;
+        while (lo < hi) { const mid=(lo+hi)>>>1; allHits[mid].date<today?lo=mid+1:hi=mid; }
+        const n = lo; if (n < 3) return;
+        let wins = 0;
+        for (let i = 0; i < n; i++) { if (allHits[i].nextChg > 0) wins++; }
+        hitRules.push({ wr: wins/n, n });
+      });
+      let wSum=0, wTot=0;
+      hitRules.forEach(r=>{ wSum+=(r.wr-0.5)*r.n; wTot+=r.n; });
+      const ruleScore = wTot>0?wSum/wTot:0;
+      const ruleDir   = ruleScore>0.05?'long':ruleScore<-0.05?'short':'neut';
+
+      const lr    = lrPredict(stock.ticker, today);
+      const lrDir = lr ? lr.dir : 'neut';
+
+      const fb = calcFutureOpenBeta(stock.ticker);
+      let futPred=0, futWt=0;
+      if (nqOpen!=null&&fb.nqPts>=10){futPred+=fb.nq*nqOpen*fb.nqPts;futWt+=fb.nqPts;}
+      if (esOpen!=null&&fb.esPts>=10){futPred+=fb.es*esOpen*fb.esPts;futWt+=fb.esPts;}
+      const futDir = futWt>0?(futPred/futWt>0.15?'long':futPred/futWt<-0.15?'short':'neut'):'neut';
+
+      const d   = _sd[stock.ticker];
+      const ni2 = d ? d.dates.indexOf(tomorrow) : -1;
+      const ti2 = d ? d.dates.indexOf(today)    : -1;
+      return {
+        ticker: stock.ticker, color: stock.color, ruleDir, lrDir, futDir,
+        actualNext:  ni2>=0&&d.changes[ni2]!=null?d.changes[ni2]:null,
+        actualToday: ti2>=0&&d.changes[ti2]!=null?d.changes[ti2]:null,
+      };
+    });
+    days.push({ date: today, stocks: stockResults });
+  }
+
+  let ruleHit=0,ruleTot=0,lrHit=0,lrTot=0,futHit=0,futTot=0;
+  days.forEach(({stocks})=>{
+    stocks.forEach(s=>{
+      if(s.ruleDir!=='neut'&&s.actualNext!==null){ruleTot++;if(s.ruleDir==='long'?s.actualNext>0:s.actualNext<0)ruleHit++;}
+      if(s.lrDir!=='neut'&&s.actualToday!==null){lrTot++;if(s.lrDir==='long'?s.actualToday>0:s.actualToday<0)lrHit++;}
+      if(s.futDir!=='neut'&&s.actualToday!==null){futTot++;if(s.futDir==='long'?s.actualToday>0:s.actualToday<0)futHit++;}
+    });
+  });
+
+  _cachedModelPK = {
+    rule:{ hit:ruleHit, tot:ruleTot, rate:ruleTot>0?ruleHit/ruleTot:0 },
+    lr:  { hit:lrHit,  tot:lrTot,   rate:lrTot>0?lrHit/lrTot:0 },
+    fut: { hit:futHit,  tot:futTot,  rate:futTot>0?futHit/futTot:0 },
+    days,
+  };
+  return _cachedModelPK;
+}
+
+self.onmessage = function(e) {
+  const { type, stockData, futuresHistory, symbols } = e.data;
+  if (type === 'compute') {
+    _sd  = stockData;
+    _fh  = futuresHistory;
+    _sym = symbols;
+    _cachedObs = null; _cachedComboConds = null; _cachedRuleHits = null;
+    _cachedFutureOpenBeta = {}; _cachedModelPK = null;
+
+    const obs      = buildObservations();
+    const ruleHits = buildRuleHits();
+    const modelPK  = runModelPK();
+    self.postMessage({ type: 'result', obs, ruleHits, modelPK });
+  }
+};
+`;
+
+let _computeWorker = null;
+
+function startComputeWorker() {
+  if (_computeWorker) { _computeWorker.terminate(); _computeWorker = null; }
+  const blob = new Blob([WORKER_SRC], { type: 'application/javascript' });
+  const url  = URL.createObjectURL(blob);
+  _computeWorker = new Worker(url);
+  URL.revokeObjectURL(url);
+
+  _computeWorker.onmessage = function(e) {
+    if (e.data.type !== 'result') return;
+    const { obs, ruleHits, modelPK } = e.data;
+    // 注入缓存，后续主线程调用 buildObservations() 等直接返回缓存
+    _cachedObs      = obs;
+    _cachedRuleHits = ruleHits;
+    _cachedModelPK  = modelPK;
+    // 重新渲染信号区域（不触碰 K 线、股票卡片等）
+    renderTodaySignal();
+    renderModelPK();
+  };
+
+  _computeWorker.onerror = function(err) {
+    console.warn('Worker error, falling back to main thread:', err.message);
+    // 降级：主线程直接计算
+    _cachedObs      = null;
+    _cachedRuleHits = null;
+    _cachedModelPK  = null;
+    renderTodaySignal();
+    renderModelPK();
+  };
+
+  _computeWorker.postMessage({
+    type: 'compute',
+    stockData:      stockData,
+    futuresHistory: futuresHistory,
+    symbols:        SYMBOLS,
+  });
+}
+
+// ── Init ─────────────────────────────────────────────────────────
+loadAll();
+</script>
+</body>
+</html>
