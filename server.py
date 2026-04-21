@@ -1657,13 +1657,15 @@ async def get_data():
     _heavy_cache["futures_history"] = futures_history
     _heavy_cache["all_dates"]       = all_dates
 
-    # 如果数据日期没变，跳过重计算直接用缓存
+    # 如果数据日期没变且代码版本未变，跳过重计算直接用缓存
+    HEAVY_VERSION = "v4"  # 改动 analyze_miss_patterns/obs 结构时递增
     new_last_date = all_dates[-1] if all_dates else ""
-    if _heavy_cache.get("ready") and _heavy_cache.get("last_data_date") == new_last_date:
-        pass  # 数据未更新，沿用已有 heavy 缓存
+    cache_key = f"{new_last_date}_{HEAVY_VERSION}"
+    if _heavy_cache.get("ready") and _heavy_cache.get("cache_key") == cache_key:
+        pass  # 数据和代码版本均未更新，沿用缓存
     else:
         _heavy_cache["ready"] = False
-        _heavy_cache["last_data_date"] = new_last_date
+        _heavy_cache["cache_key"] = cache_key
         import threading
         threading.Thread(target=_run_heavy, daemon=True).start()
 
