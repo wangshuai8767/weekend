@@ -780,7 +780,9 @@ let _cachedDlModel      = null;
 let _cachedOpenRuleHits = null;
 let _cachedRfOpenModel  = null;
 let _cachedDlOpenModel  = null;
-let _cachedMissPatterns = null; // 未命中规律过滤条件
+let _cachedMissPatterns      = null;
+let _cachedCloseTop1Records  = [];
+let _cachedOpenTop1Records   = [];
 // ticker → condKey → [{date, nextChg}]  预计算每条规则的历史命中列表
 let _cachedRuleHits = null;
 let _cachedAllConds = null;   // 全部条件（base + combo），只算一次
@@ -979,7 +981,9 @@ async function pollHeavy() {
       _cachedOpenRuleHits = data.openRuleHits  || null;
       _cachedRfOpenModel  = data.rfOpenModel   || null;
       _cachedDlOpenModel  = data.dlOpenModel   || null;
-      _cachedMissPatterns = data.missPatterns  || null;
+      _cachedMissPatterns      = data.missPatterns       || null;
+      _cachedCloseTop1Records  = data.closeTop1Records   || [];
+      _cachedOpenTop1Records   = data.openTop1Records    || [];
       _pkDayIdx = null;
       if (_cachedModelPK?.days) {
         _pkDayIdx = new Map();
@@ -2736,43 +2740,35 @@ function renderSignalStatsBar() {
   const el = document.getElementById('signal-stats-bar');
   if (!el) return;
   if (sigMode === 'open') { el.style.display = 'none'; return; }
+  if (!_cachedCloseTop1Records.length) { el.style.display = 'none'; return; }
 
   const range = getDateRangeParams();
   if (!range) { el.style.display = 'none'; return; }
 
-  const rangeLabel = filterDays === 5 ? '近1周' : filterDays === 10 ? '近2周' : filterDays === 21 ? '近1月' : filterDays === 63 ? '近3月' : '近1年';
-  el.innerHTML = `<div style="color:#8b949e;font-size:11px;padding:6px 14px">⏳ 加载中…</div>`;
-  el.style.display = 'block';
+  const records = _cachedCloseTop1Records.filter(r => r.date >= range.startDate && r.date <= range.endDate);
+  if (!records.length) { el.style.display = 'none'; return; }
 
-  fetch(`/api/top1stats?start=${range.startDate}&end=${range.endDate}&mode=close`)
-    .then(r => r.json())
-    .then(data => {
-      const currentEl = document.getElementById('signal-stats-bar');
-      if (!currentEl || sigMode !== 'close') return;
-      renderStatsBarFromData(currentEl, data, rangeLabel, 'close');
-    })
-    .catch(() => { if (el) el.style.display = 'none'; });
+  const hit = records.filter(r => r.hit).length;
+  const tot = records.length;
+  const rangeLabel = filterDays === 5 ? '近1周' : filterDays === 10 ? '近2周' : filterDays === 21 ? '近1月' : filterDays === 63 ? '近3月' : '近1年';
+  renderStatsBarFromData(el, { ready: true, hit, tot, rate: hit / tot, details: records.slice(-15) }, rangeLabel, 'close');
 }
 
 function renderOpenStatsBar(allDates) {
   const el = document.getElementById('open-stats-bar');
   if (!el) return;
+  if (!_cachedOpenTop1Records.length) { el.style.display = 'none'; return; }
 
   const range = getDateRangeParams();
   if (!range) { el.style.display = 'none'; return; }
 
-  const rangeLabel = filterDays === 5 ? '近1周' : filterDays === 10 ? '近2周' : filterDays === 21 ? '近1月' : filterDays === 63 ? '近3月' : '近1年';
-  el.innerHTML = `<div style="color:#8b949e;font-size:11px;padding:6px 14px">⏳ 加载中…</div>`;
-  el.style.display = 'block';
+  const records = _cachedOpenTop1Records.filter(r => r.date >= range.startDate && r.date <= range.endDate);
+  if (!records.length) { el.style.display = 'none'; return; }
 
-  fetch(`/api/top1stats?start=${range.startDate}&end=${range.endDate}&mode=open`)
-    .then(r => r.json())
-    .then(data => {
-      const currentEl = document.getElementById('open-stats-bar');
-      if (!currentEl || sigMode !== 'open') return;
-      renderStatsBarFromData(currentEl, data, rangeLabel, 'open');
-    })
-    .catch(() => { if (el) el.style.display = 'none'; });
+  const hit = records.filter(r => r.hit).length;
+  const tot = records.length;
+  const rangeLabel = filterDays === 5 ? '近1周' : filterDays === 10 ? '近2周' : filterDays === 21 ? '近1月' : filterDays === 63 ? '近3月' : '近1年';
+  renderStatsBarFromData(el, { ready: true, hit, tot, rate: hit / tot, details: records.slice(-15) }, rangeLabel, 'open');
 }
 
 // 构建开盘规则引擎用的 obs 对象（与后端 build_observations 结构一致）

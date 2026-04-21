@@ -1548,7 +1548,9 @@ async def get_heavy():
         "openRuleHits": _heavy_cache.get("openRuleHits", {}),
         "rfOpenModel":  _heavy_cache.get("rfOpenModel"),
         "dlOpenModel":  _heavy_cache.get("dlOpenModel"),
-        "missPatterns": _heavy_cache.get("missPatterns"),
+        "missPatterns":      _heavy_cache.get("missPatterns"),
+        "closeTop1Records":  _heavy_cache.get("closeTop1Records", []),
+        "openTop1Records":   _heavy_cache.get("openTop1Records", []),
     })
 
 
