@@ -1651,11 +1651,16 @@ async def get_data():
     _heavy_cache["stock_data"]      = stock_data
     _heavy_cache["futures_history"] = futures_history
     _heavy_cache["all_dates"]       = all_dates
-    _heavy_cache["ready"]           = False
 
-    # 在后台线程跑重计算（不阻塞响应）
-    import threading
-    threading.Thread(target=_run_heavy, daemon=True).start()
+    # 如果数据日期没变，跳过重计算直接用缓存
+    new_last_date = all_dates[-1] if all_dates else ""
+    if _heavy_cache.get("ready") and _heavy_cache.get("last_data_date") == new_last_date:
+        pass  # 数据未更新，沿用已有 heavy 缓存
+    else:
+        _heavy_cache["ready"] = False
+        _heavy_cache["last_data_date"] = new_last_date
+        import threading
+        threading.Thread(target=_run_heavy, daemon=True).start()
 
     return JSONResponse({
         "stockData":      stock_data,
