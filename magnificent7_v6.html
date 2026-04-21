@@ -1151,8 +1151,8 @@ function renderAll(weekDates) {
       <h2>基于历史规则 · 操作信号回溯</h2>
       <div class="sig-mode-row">
         <span>信号类型：</span>
-        <button class="sig-mode-btn ${sigMode==='close'?'active':''}" id="mode-close" onclick="setSigMode('close')">📊 收盘信号</button>
-        <button class="sig-mode-btn open-mode ${sigMode==='open'?'active':''}" id="mode-open"  onclick="setSigMode('open')">🌅 开盘信号</button>
+        <button class="sig-mode-btn active" id="mode-close" onclick="setSigMode('close')">📊 收盘信号</button>
+        <button class="sig-mode-btn open-mode" id="mode-open"  onclick="setSigMode('open')">🌅 开盘信号</button>
       </div>
       <div class="sig-date-row">
         <label>选择日期：</label>
@@ -2688,7 +2688,7 @@ function calcCloseTop1Stats(startDate, endDate) {
 }
 
 function renderStatsBarFromData(el, stats, rangeLabel, mode) {
-  if (!stats || stats.tot === 0) { el.style.display = 'none'; return; }
+  if (!stats || !stats.ready || stats.tot === 0 || stats.rate == null) { el.style.display = 'none'; return; }
   el.style.display = 'block';
   const rc = stats.rate >= 0.65 ? '#3fb950' : stats.rate >= 0.55 ? '#e3b341' : '#f85149';
   const modeLabel = mode === 'open' ? '开盘' : '收盘';
@@ -2698,12 +2698,13 @@ function renderStatsBarFromData(el, stats, rangeLabel, mode) {
   const recentDetails = [...(stats.details || [])].reverse().slice(0, 10);
   const detailHtml = recentDetails.map(r => {
     const c = r.hit ? '#3fb950' : '#f85149';
-    const ac = r.actual >= 0 ? '#3fb950' : '#f85149';
+    const ac = (r.actual ?? 0) >= 0 ? '#3fb950' : '#f85149';
     const color = colorMap[r.ticker] || '#ccc';
+    const actualVal = typeof r.actual === 'number' ? r.actual : 0;
     return `<span style="display:inline-flex;align-items:center;gap:4px;padding:2px 7px;background:#0d1117;border-radius:5px;border:1px solid ${c}33;font-size:10px">
       <span style="color:${color};font-weight:700">${r.ticker}</span>
       <span style="color:${r.score>0?'#3fb950':'#f85149'}">${r.score>0?'多':'空'}</span>
-      <span style="color:${ac}">${r.actual>0?'+':''}${r.actual.toFixed(2)}%</span>
+      <span style="color:${ac}">${actualVal>0?'+':''}${actualVal.toFixed(2)}%</span>
       <span style="color:${c};font-weight:700">${r.hit?'✓':'✗'}</span>
     </span>`;
   }).join('');
@@ -2748,7 +2749,6 @@ function renderSignalStatsBar() {
     .then(data => {
       const currentEl = document.getElementById('signal-stats-bar');
       if (!currentEl || sigMode !== 'close') return;
-      if (!data.ready || data.rate == null) { currentEl.style.display = 'none'; return; }
       renderStatsBarFromData(currentEl, data, rangeLabel, 'close');
     })
     .catch(() => { if (el) el.style.display = 'none'; });
@@ -2770,7 +2770,6 @@ function renderOpenStatsBar(allDates) {
     .then(data => {
       const currentEl = document.getElementById('open-stats-bar');
       if (!currentEl || sigMode !== 'open') return;
-      if (!data.ready || data.rate == null) { currentEl.style.display = 'none'; return; }
       renderStatsBarFromData(currentEl, data, rangeLabel, 'open');
     })
     .catch(() => { if (el) el.style.display = 'none'; });
