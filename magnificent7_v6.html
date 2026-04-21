@@ -809,11 +809,14 @@ function setSigMode(mode) {
   const vr = document.getElementById('verdict-row');
   if (vr) vr.innerHTML = '';
   if (mode === 'open') {
+    const ssb = document.getElementById('signal-stats-bar');
+    if (ssb) { ssb.style.display = 'none'; ssb.innerHTML = ''; }
     renderOpenStatsBar(allDates);
     renderOpenSignalForDate(targetDate, allDates);
   } else {
     const sb = document.getElementById('open-stats-bar');
     if (sb) { sb.style.display = 'none'; sb.innerHTML = ''; }
+    renderSignalStatsBar();
     renderSignalForDate(targetDate, allDates);
   }
 }
@@ -826,6 +829,7 @@ function setFilter(days) {
   const dates = getFilteredDates();
   updateDateRange(dates);
   renderAll(dates);
+  renderSignalStatsBar();
   if (sigMode === 'open') {
     const allDatesSet = new Set();
     SYMBOLS.forEach(({ ticker }) => {
@@ -995,7 +999,7 @@ async function pollHeavy() {
       renderMiner();
       renderModelPK();
       renderRankWinrate();
-      // 开盘模式下刷新统计条
+      // 刷新统计条
       if (sigMode === 'open') {
         const allDatesSet2 = new Set();
         SYMBOLS.forEach(({ ticker }) => {
@@ -1003,6 +1007,8 @@ async function pollHeavy() {
           if (d) d.dates.forEach((dt, i) => { if (d.changes[i] != null) allDatesSet2.add(dt); });
         });
         renderOpenStatsBar([...allDatesSet2].sort());
+      } else {
+        renderSignalStatsBar();
       }
       break;
     } catch (_) { /* ignore, retry */ }
@@ -1152,6 +1158,7 @@ function renderAll(weekDates) {
         <label>选择日期：</label>
         <div class="sig-date-scroll" id="sig-date-scroll"></div>
       </div>
+      <div id="signal-stats-bar" style="display:none;margin:6px 0 10px"></div>
       <div id="actual-result"></div>
       <div id="open-stats-bar" style="display:none;margin:6px 0 10px"></div>
       <div class="verdict-row" id="verdict-row"></div>
@@ -2597,6 +2604,138 @@ function calcOpenTop1Stats(allDates, startDate, endDate) {
   }
 
   return { hit, tot, rate: tot > 0 ? hit / tot : null, details };
+}
+
+function calcCloseTop1Stats(startDate, endDate) {
+  if (!_dateSignalCache) return { hit: 0, tot: 0, rate: null, details: [] };
+
+  let hit = 0, tot = 0;
+  const details = [];
+
+  const allDatesSet = new Set();
+  SYMBOLS.forEach(({ ticker }) => {
+    const d = stockData[ticker];
+    if (d) d.dates.forEach((dt, i) => { if (d.changes[i] != null) allDatesSet.add(dt); });
+  });
+  const allDates = [...allDatesSet].sort();
+
+  for (const targetDate of allDates) {
+    if (targetDate < startDate || targetDate > endDate) continue;
+    const tickerMap = _dateSignalCache.get(targetDate);
+    if (!tickerMap) continue;
+
+    const di = allDates.indexOf(targetDate);
+    const nextDate = di >= 0 && di + 1 < allDates.length ? allDates[di + 1] : null;
+    if (!nextDate) continue;
+
+    let bestTicker = null, bestAbsScore = -1, bestScore = 0, bestColor = '#fff';
+
+    const qqqNextOpen = getQqqNextOpen(targetDate);
+
+    for (const { ticker, color } of SYMBOLS) {
+      const entry = tickerMap.get(ticker);
+      if (!entry) continue;
+      const { longScore } = entry;
+
+      // QQQ future signal (historical: next-day open × beta)
+      let futSignal = 0, futHasData = false;
+      const fb = calcQqqOpenBeta(ticker);
+      if (qqqNextOpen != null && fb.pts >= 10) {
+        const fopScore = (fb.beta * qqqNextOpen) / 1.5;
+        futSignal = fopScore;
+        futHasData = true;
+      }
+
+      const rfEntry = _cachedRfModel?.preds?.[targetDate]?.[ticker];
+      const dlEntry = _cachedDlModel?.preds?.[targetDate]?.[ticker];
+      const rfProb  = rfEntry ? rfEntry.prob : null;
+      const dlProb  = dlEntry ? dlEntry.prob : null;
+
+      const futW  = futHasData ? 0.34 : 0;
+      const dlW   = dlProb  != null ? 0.32 : 0;
+      const rfW   = rfProb  != null ? 0.30 : 0;
+      const ruleW = Math.max(0.04, 1 - futW - dlW - rfW);
+      const total = futW + dlW + rfW + ruleW;
+
+      const rfSignal   = rfProb  != null ? (rfProb  - 0.5) * 2 : 0;
+      const dlSignal   = dlProb  != null ? (dlProb  - 0.5) * 2 : 0;
+      const ruleSignal = longScore;
+
+      let combinedScore = (futSignal*futW + dlSignal*dlW + rfSignal*rfW + ruleSignal*ruleW) / total;
+
+      if (Math.abs(combinedScore) > bestAbsScore) {
+        bestAbsScore = Math.abs(combinedScore);
+        bestScore = combinedScore;
+        bestTicker = ticker;
+        bestColor = color;
+      }
+    }
+
+    if (!bestTicker || bestAbsScore < 0.05) continue;
+
+    const d = stockData[bestTicker];
+    const ni = d ? d.dates.indexOf(nextDate) : -1;
+    const actual = ni >= 0 && d.changes[ni] != null ? d.changes[ni] : null;
+    if (actual === null) continue;
+
+    const isHit = bestScore > 0 ? actual > 0 : actual < 0;
+    if (isHit) hit++;
+    tot++;
+    details.push({ date: targetDate, ticker: bestTicker, score: bestScore, actual, hit: isHit, color: bestColor });
+  }
+
+  return { hit, tot, rate: tot > 0 ? hit / tot : null, details };
+}
+
+function renderSignalStatsBar() {
+  const el = document.getElementById('signal-stats-bar');
+  if (!el) return;
+
+  if (sigMode === 'open') {
+    el.style.display = 'none';
+    return;
+  }
+
+  if (!_dateSignalCache) { el.style.display = 'none'; return; }
+
+  const sample = Object.values(stockData).find(v => v);
+  const allTradingDates = sample ? sample.dates.filter((_, i) => sample.changes[i] !== null) : [];
+  if (!allTradingDates.length) { el.style.display = 'none'; return; }
+
+  const daysBefore = filterDays > 0 ? filterDays : 252;
+  const endDate = allTradingDates[allTradingDates.length - 1];
+  const startDate = allTradingDates.length > daysBefore
+    ? allTradingDates[allTradingDates.length - 1 - daysBefore]
+    : allTradingDates[0];
+
+  const stats = calcCloseTop1Stats(startDate, endDate);
+  if (stats.tot === 0) { el.style.display = 'none'; return; }
+
+  el.style.display = 'block';
+  const rc = stats.rate >= 0.65 ? '#3fb950' : stats.rate >= 0.55 ? '#e3b341' : '#f85149';
+  const rangeLabel = filterDays === 5 ? '近1周' : filterDays === 10 ? '近2周' : filterDays === 21 ? '近1月' : filterDays === 63 ? '近3月' : '近1年';
+
+  const recentDetails = stats.details.slice(-10).reverse();
+  const detailHtml = recentDetails.map(r => {
+    const c = r.hit ? '#3fb950' : '#f85149';
+    const ac = r.actual >= 0 ? '#3fb950' : '#f85149';
+    return `<span style="display:inline-flex;align-items:center;gap:4px;padding:2px 7px;background:#0d1117;border-radius:5px;border:1px solid ${c}33;font-size:10px">
+      <span style="color:${r.color};font-weight:700">${r.ticker}</span>
+      <span style="color:${r.score>0?'#3fb950':'#f85149'}">${r.score>0?'多':'空'}</span>
+      <span style="color:${ac}">${r.actual>0?'+':''}${r.actual.toFixed(2)}%</span>
+      <span style="color:${c};font-weight:700">${r.hit?'✓':'✗'}</span>
+    </span>`;
+  }).join('');
+
+  el.innerHTML = `
+    <div style="background:#161b22;border:1px solid #30363d;border-radius:10px;padding:10px 14px">
+      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:${recentDetails.length?'8px':'0'}">
+        <span style="font-size:11px;color:#8b949e">${rangeLabel} 收盘排名第一胜率</span>
+        <span style="font-size:20px;font-weight:700;color:${rc}">${(stats.rate*100).toFixed(1)}%</span>
+        <span style="font-size:11px;color:#8b949e">${stats.hit}/${stats.tot} 次命中</span>
+      </div>
+      ${recentDetails.length ? `<div style="display:flex;flex-wrap:wrap;gap:4px">${detailHtml}</div>` : ''}
+    </div>`;
 }
 
 function renderOpenStatsBar(allDates) {
