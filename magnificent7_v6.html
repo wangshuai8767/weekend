@@ -2687,40 +2687,21 @@ function calcCloseTop1Stats(startDate, endDate) {
   return { hit, tot, rate: tot > 0 ? hit / tot : null, details };
 }
 
-function renderSignalStatsBar() {
-  const el = document.getElementById('signal-stats-bar');
-  if (!el) return;
-
-  if (sigMode === 'open') {
-    el.style.display = 'none';
-    return;
-  }
-
-  if (!_dateSignalCache) { el.style.display = 'none'; return; }
-
-  const sample = Object.values(stockData).find(v => v);
-  const allTradingDates = sample ? sample.dates.filter((_, i) => sample.changes[i] !== null) : [];
-  if (!allTradingDates.length) { el.style.display = 'none'; return; }
-
-  const daysBefore = filterDays > 0 ? filterDays : 252;
-  const endDate = allTradingDates[allTradingDates.length - 1];
-  const startDate = allTradingDates.length > daysBefore
-    ? allTradingDates[allTradingDates.length - 1 - daysBefore]
-    : allTradingDates[0];
-
-  const stats = calcCloseTop1Stats(startDate, endDate);
-  if (stats.tot === 0) { el.style.display = 'none'; return; }
-
+function renderStatsBarFromData(el, stats, rangeLabel, mode) {
+  if (!stats || stats.tot === 0) { el.style.display = 'none'; return; }
   el.style.display = 'block';
   const rc = stats.rate >= 0.65 ? '#3fb950' : stats.rate >= 0.55 ? '#e3b341' : '#f85149';
-  const rangeLabel = filterDays === 5 ? '近1周' : filterDays === 10 ? '近2周' : filterDays === 21 ? '近1月' : filterDays === 63 ? '近3月' : '近1年';
+  const modeLabel = mode === 'open' ? '开盘' : '收盘';
+  const colorMap = {};
+  SYMBOLS.forEach(s => { colorMap[s.ticker] = s.color; });
 
-  const recentDetails = stats.details.slice(-10).reverse();
+  const recentDetails = [...(stats.details || [])].reverse().slice(0, 10);
   const detailHtml = recentDetails.map(r => {
     const c = r.hit ? '#3fb950' : '#f85149';
     const ac = r.actual >= 0 ? '#3fb950' : '#f85149';
+    const color = colorMap[r.ticker] || '#ccc';
     return `<span style="display:inline-flex;align-items:center;gap:4px;padding:2px 7px;background:#0d1117;border-radius:5px;border:1px solid ${c}33;font-size:10px">
-      <span style="color:${r.color};font-weight:700">${r.ticker}</span>
+      <span style="color:${color};font-weight:700">${r.ticker}</span>
       <span style="color:${r.score>0?'#3fb950':'#f85149'}">${r.score>0?'多':'空'}</span>
       <span style="color:${ac}">${r.actual>0?'+':''}${r.actual.toFixed(2)}%</span>
       <span style="color:${c};font-weight:700">${r.hit?'✓':'✗'}</span>
@@ -2730,7 +2711,7 @@ function renderSignalStatsBar() {
   el.innerHTML = `
     <div style="background:#161b22;border:1px solid #30363d;border-radius:10px;padding:10px 14px">
       <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:${recentDetails.length?'8px':'0'}">
-        <span style="font-size:11px;color:#8b949e">${rangeLabel} 收盘排名第一胜率</span>
+        <span style="font-size:11px;color:#8b949e">${rangeLabel} ${modeLabel}排名第一胜率</span>
         <span style="font-size:20px;font-weight:700;color:${rc}">${(stats.rate*100).toFixed(1)}%</span>
         <span style="font-size:11px;color:#8b949e">${stats.hit}/${stats.tot} 次命中</span>
       </div>
@@ -2738,53 +2719,59 @@ function renderSignalStatsBar() {
     </div>`;
 }
 
+function getDateRangeParams() {
+  const sample = Object.values(stockData).find(v => v);
+  const allTradingDates = sample ? sample.dates.filter((_, i) => sample.changes[i] !== null) : [];
+  if (!allTradingDates.length) return null;
+  const daysBefore = filterDays > 0 ? filterDays : 252;
+  const endDate = allTradingDates[allTradingDates.length - 1];
+  const startDate = allTradingDates.length > daysBefore
+    ? allTradingDates[allTradingDates.length - 1 - daysBefore]
+    : allTradingDates[0];
+  return { startDate, endDate };
+}
+
+function renderSignalStatsBar() {
+  const el = document.getElementById('signal-stats-bar');
+  if (!el) return;
+  if (sigMode === 'open') { el.style.display = 'none'; return; }
+
+  const range = getDateRangeParams();
+  if (!range) { el.style.display = 'none'; return; }
+
+  const rangeLabel = filterDays === 5 ? '近1周' : filterDays === 10 ? '近2周' : filterDays === 21 ? '近1月' : filterDays === 63 ? '近3月' : '近1年';
+  el.innerHTML = `<div style="color:#8b949e;font-size:11px;padding:6px 14px">⏳ 加载中…</div>`;
+  el.style.display = 'block';
+
+  fetch(`/api/top1stats?start=${range.startDate}&end=${range.endDate}&mode=close`)
+    .then(r => r.json())
+    .then(data => {
+      const currentEl = document.getElementById('signal-stats-bar');
+      if (!currentEl || sigMode !== 'close') return;
+      renderStatsBarFromData(currentEl, data, rangeLabel, 'close');
+    })
+    .catch(() => { if (el) el.style.display = 'none'; });
+}
+
 function renderOpenStatsBar(allDates) {
   const el = document.getElementById('open-stats-bar');
   if (!el) return;
 
-  if (!_cachedRfOpenModel && !_cachedDlOpenModel) {
-    el.style.display = 'none';
-    return;
-  }
+  const range = getDateRangeParams();
+  if (!range) { el.style.display = 'none'; return; }
 
+  const rangeLabel = filterDays === 5 ? '近1周' : filterDays === 10 ? '近2周' : filterDays === 21 ? '近1月' : filterDays === 63 ? '近3月' : '近1年';
+  el.innerHTML = `<div style="color:#8b949e;font-size:11px;padding:6px 14px">⏳ 加载中…</div>`;
   el.style.display = 'block';
 
-  const lastDate  = allDates[allDates.length - 1];
-  const daysBefore = filterDays > 0 ? filterDays : 252;
-  const sample = Object.values(stockData).find(v => v);
-  const allTradingDates = sample ? sample.dates.filter((_, i) => sample.changes[i] !== null) : allDates;
-  const startDate = allTradingDates.length > daysBefore
-    ? allTradingDates[allTradingDates.length - 1 - daysBefore]
-    : allTradingDates[0];
-
-  const stats = calcOpenTop1Stats(allDates, startDate, lastDate);
-  if (stats.tot === 0) { el.style.display = 'none'; return; }
-
-  const rc = stats.rate >= 0.65 ? '#3fb950' : stats.rate >= 0.55 ? '#e3b341' : '#f85149';
-  const rangeLabel = filterDays === 5 ? '近1周' : filterDays === 10 ? '近2周' : filterDays === 21 ? '近1月' : filterDays === 63 ? '近3月' : '近1年';
-
-  // 最近10条明细
-  const recentDetails = stats.details.slice(-10).reverse();
-  const detailHtml = recentDetails.map(r => {
-    const c = r.hit ? '#3fb950' : '#f85149';
-    const ac = r.actual >= 0 ? '#3fb950' : '#f85149';
-    return `<span style="display:inline-flex;align-items:center;gap:4px;padding:2px 7px;background:#0d1117;border-radius:5px;border:1px solid ${c}33;font-size:10px">
-      <span style="color:${r.color};font-weight:700">${r.ticker}</span>
-      <span style="color:${r.score>0?'#3fb950':'#f85149'}">${r.score>0?'多':'空'}</span>
-      <span style="color:${ac}">${r.actual>0?'+':''}${r.actual.toFixed(2)}%</span>
-      <span style="color:${c};font-weight:700">${r.hit?'✓':'✗'}</span>
-    </span>`;
-  }).join('');
-
-  el.innerHTML = `
-    <div style="background:#161b22;border:1px solid #30363d;border-radius:10px;padding:10px 14px">
-      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:${recentDetails.length?'8px':'0'}">
-        <span style="font-size:11px;color:#8b949e">${rangeLabel} 开盘排名第一胜率</span>
-        <span style="font-size:20px;font-weight:700;color:${rc}">${(stats.rate*100).toFixed(1)}%</span>
-        <span style="font-size:11px;color:#8b949e">${stats.hit}/${stats.tot} 次命中</span>
-      </div>
-      ${recentDetails.length ? `<div style="display:flex;flex-wrap:wrap;gap:4px">${detailHtml}</div>` : ''}
-    </div>`;
+  fetch(`/api/top1stats?start=${range.startDate}&end=${range.endDate}&mode=open`)
+    .then(r => r.json())
+    .then(data => {
+      const currentEl = document.getElementById('open-stats-bar');
+      if (!currentEl || sigMode !== 'open') return;
+      renderStatsBarFromData(currentEl, data, rangeLabel, 'open');
+    })
+    .catch(() => { if (el) el.style.display = 'none'; });
 }
 
 // 构建开盘规则引擎用的 obs 对象（与后端 build_observations 结构一致）

@@ -1269,7 +1269,9 @@ def analyze_miss_patterns(obs: list,
             if abs(combined) > 0.05:
                 hit = (combined > 0) == (o["nextChg"] > 0)
                 close_records.append({
+                    "date": date, "ticker": ticker,
                     "score": combined, "hit": hit,
+                    "nextChg": o["nextChg"],
                     "todayChg": o.get("todayChg", 0),
                     "atr5": o.get("atr5"),
                     "marketUpCount": o.get("marketUpCount", 4),
@@ -1378,9 +1380,28 @@ def analyze_miss_patterns(obs: list,
     close_after_rate, close_after_n = calc_filtered_rate(close_records, close_filters)
     open_after_rate,  open_after_n  = calc_filtered_rate(open_records,  open_filters)
 
+    # ── 4a. 收盘排名第一胜率统计 ────────────────────────────────────
+    from collections import defaultdict
+    close_by_date = defaultdict(list)
+    for r in close_records:
+        close_by_date[r["date"]].append(r)
+
+    close_top1_records = []
+    for date, entries in sorted(close_by_date.items()):
+        valid = [e for e in entries if abs(e["score"]) > 0.05]
+        if not valid:
+            continue
+        top = max(valid, key=lambda e: abs(e["score"]))
+        close_top1_records.append({
+            "date":   date,
+            "ticker": top["ticker"],
+            "score":  round(top["score"], 3),
+            "hit":    top["hit"],
+            "actual": round(top["nextChg"], 2),
+        })
+
     # ── 4. 开盘排名第一胜率统计（按时间区间）──────────────────────
     # 按日期分组，每天排名：取 |combinedOpenScore| 最大的标的为"排名第一"
-    from collections import defaultdict
     open_by_date = defaultdict(list)
     for o in obs:
         if o.get("nextOpenChg") is None:
@@ -1458,13 +1479,15 @@ def analyze_miss_patterns(obs: list,
     }
 
     return {
-        "closeFilters":   close_filters,
-        "openFilters":    open_filters,
-        "closeBefore":    {"rate": close_before[0], "n": close_before[1]},
-        "closeAfter":     {"rate": close_after_rate, "n": close_after_n},
-        "openBefore":     {"rate": open_before[0],  "n": open_before[1]},
-        "openAfter":      {"rate": open_after_rate,  "n": open_after_n},
-        "openTop1Stats":  open_top1_stats,
+        "closeFilters":      close_filters,
+        "openFilters":       open_filters,
+        "closeBefore":       {"rate": close_before[0], "n": close_before[1]},
+        "closeAfter":        {"rate": close_after_rate, "n": close_after_n},
+        "openBefore":        {"rate": open_before[0],  "n": open_before[1]},
+        "openAfter":         {"rate": open_after_rate,  "n": open_after_n},
+        "openTop1Stats":     open_top1_stats,
+        "closeTop1Records":  close_top1_records,
+        "openTop1Records":   top1_records,
     }
 
 
@@ -1494,15 +1517,17 @@ def _run_heavy():
             rf_open_model["preds"] if rf_open_model else None,
             dl_open_model["preds"] if dl_open_model else None,
         )
-        _heavy_cache["ruleHits"]      = rule_hits
-        _heavy_cache["modelPK"]       = model_pk
-        _heavy_cache["rfModel"]       = rf_model
-        _heavy_cache["dlModel"]       = dl_model
-        _heavy_cache["openRuleHits"]  = open_rule_hits
-        _heavy_cache["rfOpenModel"]   = rf_open_model
-        _heavy_cache["dlOpenModel"]   = dl_open_model
-        _heavy_cache["missPatterns"]  = miss_patterns
-        _heavy_cache["ready"]         = True
+        _heavy_cache["ruleHits"]           = rule_hits
+        _heavy_cache["modelPK"]            = model_pk
+        _heavy_cache["rfModel"]            = rf_model
+        _heavy_cache["dlModel"]            = dl_model
+        _heavy_cache["openRuleHits"]       = open_rule_hits
+        _heavy_cache["rfOpenModel"]        = rf_open_model
+        _heavy_cache["dlOpenModel"]        = dl_open_model
+        _heavy_cache["missPatterns"]       = miss_patterns
+        _heavy_cache["closeTop1Records"]   = miss_patterns.get("closeTop1Records", [])
+        _heavy_cache["openTop1Records"]    = miss_patterns.get("openTop1Records", [])
+        _heavy_cache["ready"]              = True
     except Exception as e:
         _heavy_cache["error"] = str(e)
         _heavy_cache["ready"] = True
@@ -1525,6 +1550,28 @@ async def get_heavy():
         "rfOpenModel":  _heavy_cache.get("rfOpenModel"),
         "dlOpenModel":  _heavy_cache.get("dlOpenModel"),
         "missPatterns": _heavy_cache.get("missPatterns"),
+    })
+
+
+@app.get("/api/top1stats")
+async def get_top1stats(start: str = "", end: str = "", mode: str = "close"):
+    """按日期范围返回 close/open 排名第一胜率"""
+    if not _heavy_cache.get("ready"):
+        return JSONResponse({"ready": False})
+    key = "closeTop1Records" if mode == "close" else "openTop1Records"
+    records = _heavy_cache.get(key, [])
+    if start or end:
+        records = [r for r in records if (not start or r["date"] >= start) and (not end or r["date"] <= end)]
+    if not records:
+        return JSONResponse({"ready": True, "tot": 0, "hit": 0, "rate": None, "details": []})
+    hit = sum(1 for r in records if r["hit"])
+    tot = len(records)
+    return JSONResponse({
+        "ready": True,
+        "tot": tot,
+        "hit": hit,
+        "rate": round(hit / tot, 3),
+        "details": records[-15:],  # 最近15条明细
     })
 
 
