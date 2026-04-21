@@ -325,15 +325,19 @@ def build_observations(stock_data: dict) -> list:
             # 当日开盘跳空 & 次日开盘跳空（开盘模型 label）
             today_open_chg = None
             next_open_chg  = None
+            next_open_to_close = None
             if d2:
                 oc = d2.get("openChanges") or []
+                otc = d2.get("openToClose") or []
                 if ti2 < len(oc):
                     today_open_chg = oc[ti2]
-                # 次日开盘跳空：明日的 openChanges
+                # 次日开盘跳空 & 次日开盘到收盘（实际结果）
                 if tomorrow in d2["dates"]:
                     ni2 = d2["dates"].index(tomorrow)
                     if ni2 < len(oc):
                         next_open_chg = oc[ni2]
+                    if ni2 < len(otc):
+                        next_open_to_close = otc[ni2]
 
             obs.append({
                 "ticker":        e["ticker"],
@@ -344,8 +348,9 @@ def build_observations(stock_data: dict) -> list:
                 "total":         len(row),
                 "marketUpCount": market_up,
                 "nextChg":       e["nextChg"],
-                "todayOpenChg":  today_open_chg,
-                "nextOpenChg":   next_open_chg,
+                "todayOpenChg":    today_open_chg,
+                "nextOpenChg":     next_open_chg,
+                "nextOpenToClose": next_open_to_close,
                 "qqqNextOpen":   qqq_next_open,
                 "qqqRet1":       qqq_ret1,
                 "qqqRet3":       qqq_ret3,
@@ -1403,12 +1408,11 @@ def analyze_miss_patterns(obs: list,
     # 按日期分组，每天排名：取 |combinedOpenScore| 最大的标的为"排名第一"
     open_by_date = defaultdict(list)
     for o in obs:
-        if o.get("nextOpenChg") is None:
+        if o.get("nextOpenChg") is None or o.get("nextOpenToClose") is None:
             continue
         date   = o["date"]
         ticker = o["ticker"]
-        # 用次日开盘跳空作为均值回归信号（与前端 calcOpenTop1Stats 一致）
-        next_oc = o["nextOpenChg"]  # 次日开盘跳空，这是实际交易时能看到的信号
+        next_oc = o["nextOpenChg"]  # 次日开盘跳空，用于均值回归信号
         mrev_sig = -1 if next_oc > 1 else 1 if next_oc < -1 else 0
         rf_o = (open_rf_preds or {}).get(date, {}).get(ticker)
         dl_o = (open_dl_preds or {}).get(date, {}).get(ticker)
@@ -1430,10 +1434,10 @@ def analyze_miss_patterns(obs: list,
                 break
         open_by_date[date].append({
             "ticker": ticker, "score": score,
-            "nextOpenChg": o["nextOpenChg"],
+            "nextOpenToClose": o["nextOpenToClose"],  # 实际结果：次日开盘到收盘
         })
 
-    # 对每天找排名第一（|score| 最大 & score != 0）
+    # 对每天找排名第一（|score| 最大），用 nextOpenToClose 判断命中（与前端一致）
     top1_records = []
     for date, entries in sorted(open_by_date.items()):
         valid = [e for e in entries if abs(e["score"]) > 0.05]
@@ -1441,13 +1445,13 @@ def analyze_miss_patterns(obs: list,
             continue
         top = max(valid, key=lambda e: abs(e["score"]))
         predicted_up = top["score"] > 0
-        actual_up    = top["nextOpenChg"] > 0
+        actual_up    = top["nextOpenToClose"] > 0
         top1_records.append({
             "date":   date,
             "ticker": top["ticker"],
             "score":  round(top["score"], 3),
             "hit":    predicted_up == actual_up,
-            "actual": round(top["nextOpenChg"], 2),
+            "actual": round(top["nextOpenToClose"], 2),
         })
 
     def range_stat(records, start_date, end_date):
