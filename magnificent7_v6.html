@@ -1157,8 +1157,8 @@ function renderAll(weekDates) {
       <h2>基于历史规则 · 操作信号回溯</h2>
       <div class="sig-mode-row">
         <span>信号类型：</span>
-        <button class="sig-mode-btn active" id="mode-close" onclick="setSigMode('close')">📊 收盘信号</button>
-        <button class="sig-mode-btn open-mode" id="mode-open"  onclick="setSigMode('open')">🌅 开盘信号</button>
+        <button class="sig-mode-btn ${sigMode==='close'?'active':''}" id="mode-close" onclick="setSigMode('close')">📊 收盘信号</button>
+        <button class="sig-mode-btn open-mode ${sigMode==='open'?'active':''}" id="mode-open"  onclick="setSigMode('open')">🌅 开盘信号</button>
       </div>
       <div class="sig-date-row">
         <label>选择日期：</label>
