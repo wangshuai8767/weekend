@@ -2745,39 +2745,44 @@ function getDateRangeParams() {
   return { startDate, endDate };
 }
 
+function _renderStatsBar(elId, mode, cachedRecords) {
+  const el = document.getElementById(elId);
+  if (!el) return;
+  const range = getDateRangeParams();
+  if (!range) { el.style.display = 'none'; return; }
+  const rangeLabel = filterDays === 5 ? '近1周' : filterDays === 10 ? '近2周' : filterDays === 21 ? '近1月' : filterDays === 63 ? '近3月' : '近1年';
+
+  // 先用本地缓存立即显示
+  if (cachedRecords.length) {
+    const recs = cachedRecords.filter(r => r.date >= range.startDate && r.date <= range.endDate);
+    if (recs.length) {
+      const hit = recs.filter(r => r.hit).length;
+      renderStatsBarFromData(el, { ready: true, hit, tot: recs.length, rate: hit / recs.length, details: recs.slice(-15) }, rangeLabel, mode);
+    }
+  }
+
+  // 再调接口更新（heavy ready 后才有数据）
+  fetch(`/api/top1stats?start=${range.startDate}&end=${range.endDate}&mode=${mode}`)
+    .then(r => r.json())
+    .then(data => {
+      const currentEl = document.getElementById(elId);
+      if (!currentEl) return;
+      if (mode === 'close' && sigMode !== 'close') return;
+      if (mode === 'open'  && sigMode !== 'open')  return;
+      if (data.ready && data.tot > 0) renderStatsBarFromData(currentEl, data, rangeLabel, mode);
+    })
+    .catch(() => {});
+}
+
 function renderSignalStatsBar() {
   const el = document.getElementById('signal-stats-bar');
   if (!el) return;
   if (sigMode === 'open') { el.style.display = 'none'; return; }
-  if (!_cachedCloseTop1Records.length) { el.style.display = 'none'; return; }
-
-  const range = getDateRangeParams();
-  if (!range) { el.style.display = 'none'; return; }
-
-  const records = _cachedCloseTop1Records.filter(r => r.date >= range.startDate && r.date <= range.endDate);
-  if (!records.length) { el.style.display = 'none'; return; }
-
-  const hit = records.filter(r => r.hit).length;
-  const tot = records.length;
-  const rangeLabel = filterDays === 5 ? '近1周' : filterDays === 10 ? '近2周' : filterDays === 21 ? '近1月' : filterDays === 63 ? '近3月' : '近1年';
-  renderStatsBarFromData(el, { ready: true, hit, tot, rate: hit / tot, details: records.slice(-15) }, rangeLabel, 'close');
+  _renderStatsBar('signal-stats-bar', 'close', _cachedCloseTop1Records);
 }
 
 function renderOpenStatsBar(allDates) {
-  const el = document.getElementById('open-stats-bar');
-  if (!el) return;
-  if (!_cachedOpenTop1Records.length) { el.style.display = 'none'; return; }
-
-  const range = getDateRangeParams();
-  if (!range) { el.style.display = 'none'; return; }
-
-  const records = _cachedOpenTop1Records.filter(r => r.date >= range.startDate && r.date <= range.endDate);
-  if (!records.length) { el.style.display = 'none'; return; }
-
-  const hit = records.filter(r => r.hit).length;
-  const tot = records.length;
-  const rangeLabel = filterDays === 5 ? '近1周' : filterDays === 10 ? '近2周' : filterDays === 21 ? '近1月' : filterDays === 63 ? '近3月' : '近1年';
-  renderStatsBarFromData(el, { ready: true, hit, tot, rate: hit / tot, details: records.slice(-15) }, rangeLabel, 'open');
+  _renderStatsBar('open-stats-bar', 'open', _cachedOpenTop1Records);
 }
 
 // 构建开盘规则引擎用的 obs 对象（与后端 build_observations 结构一致）
