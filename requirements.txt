@@ -3,4 +3,3 @@ uvicorn==0.44.0
 httpx==0.28.1
 numpy==2.4.4
 scikit-learn==1.8.0
-torch==2.6.0
