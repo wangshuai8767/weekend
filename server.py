@@ -1266,20 +1266,19 @@ def analyze_miss_patterns(obs: list,
             dl_sig    = ((dl_prob - 0.5) * 2 * W_DL  / TOTAL_W) if dl_prob is not None else 0
             # rule_signal 近似为 0（需 run_model_pk，这里用 qqqNextOpen 方向代替）
             combined  = fut_score + rf_sig + dl_sig
-            if abs(combined) > 0.05:
-                hit = (combined > 0) == (o["nextChg"] > 0)
-                close_records.append({
-                    "date": date, "ticker": ticker,
-                    "score": combined, "hit": hit,
-                    "nextChg": o["nextChg"],
-                    "todayChg": o.get("todayChg", 0),
-                    "atr5": o.get("atr5"),
-                    "marketUpCount": o.get("marketUpCount", 4),
-                    "excess1": o.get("excess1"),
-                    "week5": o.get("week5"),
-                    "qqqRet5": o.get("qqqRet5"),
-                    "aboveMa20": o.get("aboveMa20"),
-                })
+            hit = (combined > 0) == (o["nextChg"] > 0)
+            close_records.append({
+                "date": date, "ticker": ticker,
+                "score": combined, "hit": hit,
+                "nextChg": o["nextChg"],
+                "todayChg": o.get("todayChg", 0),
+                "atr5": o.get("atr5"),
+                "marketUpCount": o.get("marketUpCount", 4),
+                "excess1": o.get("excess1"),
+                "week5": o.get("week5"),
+                "qqqRet5": o.get("qqqRet5"),
+                "aboveMa20": o.get("aboveMa20"),
+            })
 
         # ── 开盘 ──
         if o.get("nextOpenChg") is not None:
